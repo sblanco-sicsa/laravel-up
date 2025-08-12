@@ -23,878 +23,21 @@ class ApiTestController extends Controller
 
 
 
-    // public function syncSirettCategoriesToWoo(string $clienteNombre, Request $request)
-    // {
-    //     $RENAME_EXISTING = true;
-
-    //     // === Zona horaria a nivel de sesión MySQL (timestamps por defecto) ===
-    //     try {
-    //         DB::statement("SET time_zone = '-06:00'");
-    //         Log::info('MySQL time_zone establecido', ['tz' => '-06:00', 'cliente' => $clienteNombre]);
-    //     } catch (\Throwable $e) {
-    //         // Si el hosting no permite SET time_zone, igual seguimos usando now('America/Managua')
-    //         Log::warning('No se pudo establecer time_zone de la sesión MySQL', ['error' => $e->getMessage(), 'cliente' => $clienteNombre]);
-    //     }
-
-    //     // Límite de muestras que enviaremos a los logs para no saturar
-    //     $LOG_SAMPLE_LIMIT = 60;
-
-    //     $inicio = now('America/Managua');
-    //     $sync = SyncHistory::create([
-    //         'cliente' => $clienteNombre,
-    //         'started_at' => $inicio,
-    //     ]);
-
-    //     try {
-    //         // === 0) Credenciales ===
-    //         $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-    //         $credSirett = ApiConnector::getCredentials($clienteNombre, 'sirett');
-
-    //         Log::info('Credenciales detectadas', [
-    //             'cliente' => $clienteNombre,
-    //             'woo_base_url' => $credWoo->base_url ?? null,
-    //             'sirett_base_url' => $credSirett->base_url ?? null,
-    //             // No loguear usuario/password por seguridad
-    //         ]);
-
-    //         if (!$credWoo || !$credSirett) {
-    //             Log::error('Credenciales faltantes para WooCommerce o SiReTT', ['cliente' => $clienteNombre]);
-    //             return response()->json(['error' => 'Credenciales no encontradas para WooCommerce o SiReTT'], 404);
-    //         }
-
-    //         // === 1) SiReTT -> ITEMS y familias únicas ===
-    //         $items = [];
-    //         try {
-    //             $wsdl = $credSirett->base_url . '?wsdl';
-    //             Log::info('Conectando a SiReTT SOAP', ['wsdl' => $wsdl, 'cliente' => $clienteNombre]);
-
-    //             $t0 = microtime(true);
-    //             $client = new \SoapClient($wsdl, [
-    //                 'trace' => 1,
-    //                 'exceptions' => true,
-    //                 'connection_timeout' => 30
-    //             ]);
-
-    //             // Opcional: log funciones y tipos del WSDL (muestras)
-    //             try {
-    //                 $funcs = $client->__getFunctions();
-    //                 $types = $client->__getTypes();
-    //                 Log::debug('SiReTT WSDL funciones/tipos', [
-    //                     'functions_total' => is_array($funcs) ? count($funcs) : 0,
-    //                     'functions_sample' => is_array($funcs) ? array_slice($funcs, 0, min(10, count($funcs))) : [],
-    //                     'types_total' => is_array($types) ? count($types) : 0,
-    //                     'types_sample' => is_array($types) ? array_slice($types, 0, min(10, count($types))) : [],
-    //                 ]);
-    //             } catch (\Throwable $e) {
-    //                 Log::debug('No fue posible listar funciones/tipos del WSDL', ['error' => $e->getMessage()]);
-    //             }
-
-    //             $params = [
-    //                 'ws_pid' => $credSirett->user,
-    //                 'ws_passwd' => $credSirett->password,
-    //                 'bid' => $credSirett->extra
-    //             ];
-    //             // No log password; solo indicar presencia
-    //             Log::info('Invocando wsp_request_items a SiReTT', [
-    //                 'cliente' => $clienteNombre,
-    //                 'bid' => $credSirett->extra ?? null,
-    //                 'user_set' => !empty($credSirett->user),
-    //                 'pass_set' => !empty($credSirett->password),
-    //             ]);
-
-    //             $respWs = $client->__soapCall('wsp_request_items', [$params]);
-    //             $elapsed = (microtime(true) - $t0) * 1000.0;
-
-    //             // Log request/response size (no contenido completo para evitar ruido)
-    //             try {
-    //                 $lastReq = $client->__getLastRequest();
-    //                 $lastResp = $client->__getLastResponse();
-    //                 Log::debug('SiReTT SOAP trafico', [
-    //                     'request_bytes' => is_string($lastReq) ? strlen($lastReq) : null,
-    //                     'response_bytes' => is_string($lastResp) ? strlen($lastResp) : null,
-    //                     'elapsed_ms' => round($elapsed, 2),
-    //                 ]);
-    //             } catch (\Throwable $e) {
-    //                 Log::debug('No se pudo obtener lastRequest/lastResponse', ['error' => $e->getMessage()]);
-    //             }
-
-    //             $arr = json_decode(json_encode($respWs), true);
-    //             $items = $arr['data'] ?? [];
-    //             Log::info('SiReTT respuesta procesada', [
-    //                 'cliente' => $clienteNombre,
-    //                 'items_total' => is_array($items) ? count($items) : 0,
-    //                 'elapsed_ms' => round($elapsed, 2),
-    //                 'has_data_key' => array_key_exists('data', $arr),
-    //                 'root_keys' => array_keys($arr),
-    //             ]);
-
-    //             // Muestras de items sin saturar logs
-    //             $picker = function (array $row) {
-    //                 $keys = ['familia', 'family', 'sku', 'codigo', 'item_code', 'id', 'descripcion', 'nombre', 'name', 'precio', 'price', 'unidad', 'brand', 'marca'];
-    //                 $out = [];
-    //                 foreach ($keys as $k) {
-    //                     if (array_key_exists($k, $row))
-    //                         $out[$k] = $row[$k];
-    //                 }
-    //                 if (!isset($out['familia']) && array_key_exists('family', $row))
-    //                     $out['familia'] = $row['family'];
-    //                 return $out;
-    //             };
-    //             if (is_array($items) && count($items) > 0) {
-    //                 Log::debug('SiReTT items sample', [
-    //                     'sample' => array_map($picker, array_slice($items, 0, min($LOG_SAMPLE_LIMIT, count($items)))),
-    //                 ]);
-    //             }
-
-    //             // Distribución de familias (top N)
-    //             $familiaDist = collect($items)->groupBy(function ($row) {
-    //                 $fam = $row['familia'] ?? ($row['family'] ?? null);
-    //                 return is_string($fam) ? trim($fam) : '';
-    //             })->map->count()->sortDesc();
-
-    //             $missingFamilia = $familiaDist[''] ?? 0;
-    //             $topFamilias = $familiaDist->except([''])->take(20)->all();
-
-    //             Log::info('SiReTT distribución de familias', [
-    //                 'con_familia_total' => array_sum($familiaDist->except([''])->all()),
-    //                 'sin_familia_total' => $missingFamilia,
-    //                 'top20' => $topFamilias,
-    //             ]);
-
-    //             if ($missingFamilia > 0) {
-    //                 $sampleMissing = collect($items)->filter(function ($row) {
-    //                     $fam = $row['familia'] ?? ($row['family'] ?? null);
-    //                     return !is_string($fam) || trim($fam) === '';
-    //                 })->take(15)->values()->all();
-
-    //                 Log::debug('SiReTT items sin familia (sample)', [
-    //                     'sample' => array_map($picker, $sampleMissing),
-    //                 ]);
-    //             }
-    //         } catch (\Throwable $e) {
-    //             Log::error('Error al conectar/leer SiReTT', [
-    //                 'cliente' => $clienteNombre,
-    //                 'error' => $e->getMessage(),
-    //             ]);
-    //             throw new \RuntimeException('Error al conectar con SiReTT: ' . $e->getMessage());
-    //         }
-
-    //         // Extraer familias únicas
-    //         $familiasSiReTT = collect($items)
-    //             ->map(function ($row) {
-    //                 $fam = $row['familia'] ?? ($row['family'] ?? null);
-    //                 return is_string($fam) ? trim($fam) : '';
-    //             })
-    //             ->filter(fn($v) => $v !== '')
-    //             ->unique()
-    //             ->values();
-
-    //         // LOG: familias SiReTT (conteo + muestra)
-    //         Log::info('SiReTT: familias únicas', [
-    //             'cliente' => $clienteNombre,
-    //             'total' => $familiasSiReTT->count(),
-    //             'sample' => $familiasSiReTT->take($LOG_SAMPLE_LIMIT)->values()->all(),
-    //         ]);
-
-    //         // Lookup: key_normalizada -> descripción familia (array plano para velocidad)
-    //         $familiasMap = $familiasSiReTT
-    //             ->mapWithKeys(fn($f) => [$this->catKey($f) => $f])
-    //             ->all();
-
-    //         // LOG: mapa key->familia (muestra)
-    //         Log::debug('SiReTT: mapa key_normalized -> familia (sample)', [
-    //             'sample' => collect($familiasMap)->take($LOG_SAMPLE_LIMIT)->all(),
-    //             'keys_total' => count($familiasMap),
-    //         ]);
-
-    //         // === matcher inteligente (exacto, containment, fuzzy) ===
-    //         $matchFamiliaByKey = function (?string $normalizedKey) use ($familiasMap) {
-    //             if (!$normalizedKey)
-    //                 return null;
-
-    //             // 1) Exacto
-    //             if (isset($familiasMap[$normalizedKey])) {
-    //                 return $familiasMap[$normalizedKey];
-    //             }
-
-    //             // 2) Containment (evita palabras muy cortas)
-    //             foreach ($familiasMap as $famKey => $desc) {
-    //                 if (strlen($famKey) >= 4 && str_contains($normalizedKey, $famKey)) {
-    //                     return $desc;
-    //                 }
-    //                 if (strlen($normalizedKey) >= 4 && str_contains($famKey, $normalizedKey)) {
-    //                     return $desc;
-    //                 }
-    //             }
-
-    //             // 3) Fuzzy (Levenshtein normalizado)
-    //             $bestDesc = null;
-    //             $bestScore = 0.0;
-    //             foreach ($familiasMap as $famKey => $desc) {
-    //                 $maxLen = max(strlen($normalizedKey), strlen($famKey));
-    //                 if ($maxLen === 0)
-    //                     continue;
-    //                 $lev = levenshtein($normalizedKey, $famKey);
-    //                 $score = 1.0 - ($lev / $maxLen); // 0..1
-    //                 if ($score > $bestScore) {
-    //                     $bestScore = $score;
-    //                     $bestDesc = $desc;
-    //                 }
-    //             }
-    //             return ($bestScore >= 0.75) ? $bestDesc : null;
-    //         };
-
-    //         // Versión "verbose" para logging: devuelve familia y método
-    //         $debugMatchFamilia = function (?string $text) use ($familiasMap) {
-    //             $result = [
-    //                 'familia' => null,
-    //                 'method' => 'none',
-    //                 'name_key' => null,
-    //                 'fam_key' => null,
-    //                 'score' => null,
-    //             ];
-    //             if (!$text)
-    //                 return $result;
-
-    //             $key = $this->catKey($text);
-    //             $result['name_key'] = $key;
-
-    //             // Exacto
-    //             if (isset($familiasMap[$key])) {
-    //                 $result['familia'] = $familiasMap[$key];
-    //                 $result['method'] = 'exact';
-    //                 $result['fam_key'] = $key;
-    //                 return $result;
-    //             }
-
-    //             // Containment
-    //             foreach ($familiasMap as $famKey => $desc) {
-    //                 if (strlen($famKey) >= 4 && str_contains($key, $famKey)) {
-    //                     $result['familia'] = $desc;
-    //                     $result['method'] = 'contain_cat_has_fam';
-    //                     $result['fam_key'] = $famKey;
-    //                     return $result;
-    //                 }
-    //                 if (strlen($key) >= 4 && str_contains($famKey, $key)) {
-    //                     $result['familia'] = $desc;
-    //                     $result['method'] = 'contain_fam_has_cat';
-    //                     $result['fam_key'] = $famKey;
-    //                     return $result;
-    //                 }
-    //             }
-
-    //             // Fuzzy
-    //             $bestDesc = null;
-    //             $bestKey = null;
-    //             $bestScore = 0.0;
-    //             foreach ($familiasMap as $famKey => $desc) {
-    //                 $maxLen = max(strlen($key), strlen($famKey));
-    //                 if ($maxLen === 0)
-    //                     continue;
-    //                 $lev = levenshtein($key, $famKey);
-    //                 $score = 1.0 - ($lev / $maxLen);
-    //                 if ($score > $bestScore) {
-    //                     $bestScore = $score;
-    //                     $bestDesc = $desc;
-    //                     $bestKey = $famKey;
-    //                 }
-    //             }
-    //             if ($bestScore >= 0.75) {
-    //                 $result['familia'] = $bestDesc;
-    //                 $result['method'] = 'fuzzy';
-    //                 $result['fam_key'] = $bestKey;
-    //                 $result['score'] = round($bestScore, 4);
-    //             }
-    //             return $result;
-    //         };
-
-    //         $matchFamiliaFromText = function (?string $text) use ($debugMatchFamilia) {
-    //             $dbg = $debugMatchFamilia($text);
-    //             return $dbg['familia'];
-    //         };
-
-    //         // === 2) Woo -> todas las categorías (paginadas) ===
-    //         $categoriasWoo = collect();
-    //         $page = 1;
-    //         do {
-    //             $res = Http::retry(3, 2000)
-    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
-    //                 ->timeout(120)
-    //                 ->get("{$credWoo->base_url}/products/categories", [
-    //                     'per_page' => 100,
-    //                     'page' => $page,
-    //                     'orderby' => 'id',
-    //                     'order' => 'asc'
-    //                 ]);
-
-    //             if ($res->failed()) {
-    //                 Log::error('Error HTTP obteniendo categorías de Woo', ['status' => $res->status(), 'body' => $res->body()]);
-    //                 throw new \RuntimeException('Error al obtener categorías desde WooCommerce: ' . $res->body());
-    //             }
-
-    //             $batch = collect($res->json());
-    //             $categoriasWoo = $categoriasWoo->merge($batch);
-    //             $page++;
-    //         } while ($batch->count() > 0);
-
-    //         // LOG: categorías Woo (conteo + muestra condensada)
-    //         Log::info('Woo: categorías obtenidas', [
-    //             'cliente' => $clienteNombre,
-    //             'total' => $categoriasWoo->count(),
-    //             'sample' => $categoriasWoo->take($LOG_SAMPLE_LIMIT)->map(function ($c) {
-    //                 return [
-    //                     'id' => $c['id'] ?? null,
-    //                     'name' => $c['name'] ?? null,
-    //                     'name_k' => $this->catKey($c['name'] ?? ''),
-    //                     'slug' => $c['slug'] ?? null,
-    //                     'parent' => (int) ($c['parent'] ?? 0),
-    //                     'count' => (int) ($c['count'] ?? 0),
-    //                 ];
-    //             })->values()->all(),
-    //         ]);
-
-    //         // Índices rápidos
-    //         $wooById = $categoriasWoo->keyBy('id');
-    //         $wooByKey = $categoriasWoo->keyBy(fn($c) => $this->catKey($c['name'] ?? ''));
-
-    //         // === 3) BASELINE LOCAL: upsert de TODAS las categorías con productos_woo y familia (desde SiReTT) ===
-    //         $matchStats = ['exact' => 0, 'contain_cat_has_fam' => 0, 'contain_fam_has_cat' => 0, 'fuzzy' => 0, 'none' => 0];
-    //         $unmatchedSample = [];
-
-    //         foreach ($categoriasWoo as $i => $cat) {
-    //             $name = $cat['name'] ?? '';
-    //             $count = (int) ($cat['count'] ?? 0);
-    //             $parentId = (int) ($cat['parent'] ?? 0);
-
-    //             $dbg = $debugMatchFamilia($name);
-    //             $familiaMatch = $dbg['familia'];
-    //             $method = $dbg['method'];
-    //             $matchStats[$method] = ($matchStats[$method] ?? 0) + 1;
-
-    //             if ($method === 'none' && count($unmatchedSample) < $LOG_SAMPLE_LIMIT) {
-    //                 $unmatchedSample[] = [
-    //                     'woo_id' => $cat['id'] ?? null,
-    //                     'name' => $name,
-    //                     'name_key' => $dbg['name_key'],
-    //                     'slug' => $cat['slug'] ?? null,
-    //                     'parent' => $parentId,
-    //                     'count' => $count,
-    //                 ];
-    //             }
-
-    //             // Log detallado para primeras N filas
-    //             if ($i < 30) {
-    //                 Log::debug('Match categoría vs familia (baseline)', [
-    //                     'woo_id' => $cat['id'] ?? null,
-    //                     'name' => $name,
-    //                     'name_key' => $dbg['name_key'],
-    //                     'method' => $method,
-    //                     'fam_key' => $dbg['fam_key'],
-    //                     'familia' => $familiaMatch,
-    //                     'score' => $dbg['score'],
-    //                 ]);
-    //             }
-
-    //             $this->ensureCatSync($clienteNombre, $familiaMatch, [
-    //                 'id' => $cat['id'] ?? null,
-    //                 'name' => $name,
-    //                 'slug' => $cat['slug'] ?? null,
-    //                 'parent' => $parentId,
-    //                 'count' => $count,
-    //             ]);
-    //         }
-
-    //         // LOG: resumen de matching
-    //         Log::info('Resumen matching Woo vs SiReTT', [
-    //             'cliente' => $clienteNombre,
-    //             'stats' => $matchStats,
-    //             'unmatched_sample' => $unmatchedSample,
-    //         ]);
-
-    //         // === 4) PRE-LIMPIEZA: eliminar duplicadas con count==0 ===
-    //         $byId = $categoriasWoo->keyBy('id');
-    //         $childrenByParent = $categoriasWoo->groupBy(fn($c) => (int) ($c['parent'] ?? 0));
-    //         $normalize = fn(string $n) => preg_replace(
-    //             '/\s+/',
-    //             ' ',
-    //             iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', Str::of($n)->lower()->squish()->toString()) ?: $n
-    //         );
-    //         $groups = $categoriasWoo->groupBy(fn($c) => $normalize($c['name'] ?? ''));
-
-    //         $dup_groups = 0;
-    //         $dup_candidates = 0;
-    //         $toDelete = collect();
-
-    //         foreach ($groups as $key => $list) {
-    //             if ($key === '' || $list->count() <= 1)
-    //                 continue;
-
-    //             $dup_groups++;
-
-    //             // Mantener la más "fuerte": mayor count, luego menor id
-    //             $keep = $list->sortBy([
-    //                 fn($a, $b) => ($b['count'] <=> $a['count']),
-    //                 fn($a, $b) => ($a['id'] <=> $b['id']),
-    //             ])->first();
-
-    //             $list->each(function ($c) use ($keep, &$toDelete, &$dup_candidates) {
-    //                 if ($c['id'] === $keep['id'])
-    //                     return;
-    //                 if ((int) ($c['count'] ?? 0) === 0) {
-    //                     $toDelete->push((int) $c['id']);
-    //                     $dup_candidates++;
-    //                 }
-    //             });
-    //         }
-
-    //         $toDelete = $toDelete->unique()->values();
-    //         $deleted = [];
-    //         $deleteErrors = [];
-
-    //         if ($toDelete->isNotEmpty()) {
-    //             $passes = 0;
-    //             $max = 10;
-    //             while ($toDelete->isNotEmpty() && $passes < $max) {
-    //                 $passes++;
-    //                 $set = $toDelete->flip();
-
-    //                 $leafIds = $toDelete->filter(function ($id) use ($childrenByParent, $set) {
-    //                     $children = $childrenByParent->get($id, collect());
-    //                     foreach ($children as $child) {
-    //                         if (isset($set[$child['id']]))
-    //                             return false; // aún tiene hijos en la cola
-    //                     }
-    //                     return true;
-    //                 })->values();
-
-    //                 if ($leafIds->isEmpty())
-    //                     break;
-
-    //                 foreach ($leafIds as $id) {
-    //                     $orig = $byId[$id] ?? null;
-
-    //                     $del = Http::retry(2, 1500)
-    //                         ->withBasicAuth($credWoo->user, $credWoo->password)
-    //                         ->timeout(60)
-    //                         ->delete("{$credWoo->base_url}/products/categories/{$id}", ['force' => true]);
-
-    //                     if ($del->successful()) {
-    //                         $deleted[] = $id;
-
-    //                         SyncHistoryDetail::create([
-    //                             'sync_history_id' => $sync->id,
-    //                             'sku' => "CAT:{$id}",
-    //                             'tipo' => 'categoria_eliminada',
-    //                             'datos_anteriores' => [
-    //                                 'id' => $id,
-    //                                 'name' => $orig['name'] ?? null,
-    //                                 'slug' => $orig['slug'] ?? null,
-    //                                 'count' => (int) ($orig['count'] ?? 0),
-    //                             ],
-    //                             'datos_nuevos' => [],
-    //                             'deltas' => [],
-    //                         ]);
-
-    //                         // Limpiar tracking local
-    //                         CategoriaSincronizada::where('cliente', $clienteNombre)
-    //                             ->where('woocommerce_id', $id)
-    //                             ->delete();
-    //                     } else {
-    //                         $deleteErrors[] = ['id' => $id, 'http' => $del->status(), 'body' => $del->body()];
-    //                     }
-
-    //                     $toDelete = $toDelete->reject(fn($x) => $x === $id)->values();
-    //                 }
-    //             }
-
-    //             // Quitar del listado local las eliminadas
-    //             $categoriasWoo = $categoriasWoo->reject(fn($c) => in_array($c['id'], $deleted))->values();
-
-    //             // LOG: resultado de limpieza
-    //             Log::info('Limpieza de duplicados en Woo', [
-    //                 'cliente' => $clienteNombre,
-    //                 'grupos_dup' => $dup_groups,
-    //                 'candidatas_dup' => $dup_candidates,
-    //                 'eliminadas' => count($deleted),
-    //                 'errores' => $deleteErrors,
-    //             ]);
-    //         }
-
-    //         // Para resumen
-    //         $productosPorCategoria = $categoriasWoo->map(fn($c) => [
-    //             'id' => $c['id'],
-    //             'name' => $c['name'] ?? '',
-    //             'slug' => $c['slug'] ?? '',
-    //             'count' => (int) ($c['count'] ?? 0),
-    //         ])->values();
-
-    //         // Recalcular mapas
-    //         $mapIdPorKey = [];
-    //         $slugExistente = [];
-    //         foreach ($categoriasWoo as $cat) {
-    //             $id = $cat['id'];
-    //             $name = $cat['name'] ?? '';
-    //             $slug = $cat['slug'] ?? '';
-
-    //             $mapIdPorKey[$this->categoryKey($name)] = $id;
-    //             if ($slug !== '')
-    //                 $slugExistente[$slug] = $id;
-    //         }
-
-    //         // === 5) Renombrado opcional ===
-    //         $renombradas = [];
-    //         if ($RENAME_EXISTING && $categoriasWoo->isNotEmpty()) {
-    //             foreach ($categoriasWoo as $cat) {
-    //                 $id = $cat['id'];
-    //                 $name = $cat['name'] ?? '';
-    //                 $slug = $cat['slug'] ?? '';
-    //                 $count = (int) ($cat['count'] ?? 0);
-
-    //                 // Intentar familia por nombre actual (exacta/containment/fuzzy) — origen SiReTT
-    //                 $dbg = $debugMatchFamilia($name);
-    //                 $familiaMatch = $dbg['familia'];
-
-    //                 $nameDeseado = $this->categoryDisplay($name);
-    //                 $slugDeseado = $this->categorySlug($name);
-
-    //                 $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
-    //                 if (!$needsRename) {
-    //                     $this->ensureCatSync($clienteNombre, $familiaMatch, [
-    //                         'id' => $id,
-    //                         'name' => $name,
-    //                         'slug' => $slug,
-    //                         'parent' => (int) ($cat['parent'] ?? 0),
-    //                         'count' => $count,
-    //                     ]);
-    //                     continue;
-    //                 }
-
-    //                 $slugFinal = $slugDeseado;
-    //                 if (isset($slugExistente[$slugDeseado]) && $slugExistente[$slugDeseado] !== $id) {
-    //                     $slugFinal = $slugDeseado . '-' . $id;
-    //                 }
-
-    //                 $up = Http::retry(3, 2000)
-    //                     ->withBasicAuth($credWoo->user, $credWoo->password)
-    //                     ->timeout(120)
-    //                     ->put("{$credWoo->base_url}/products/categories/{$id}", [
-    //                         'name' => $nameDeseado,
-    //                         'slug' => $slugFinal
-    //                     ]);
-
-    //                 if ($up->successful()) {
-    //                     $this->ensureCatSync($clienteNombre, $familiaMatch, [
-    //                         'id' => $id,
-    //                         'name' => $nameDeseado,
-    //                         'slug' => $slugFinal,
-    //                         'parent' => (int) ($cat['parent'] ?? 0),
-    //                         'count' => $count,
-    //                     ]);
-
-    //                     unset($slugExistente[$slug]);
-    //                     $slugExistente[$slugFinal] = $id;
-
-    //                     $oldKey = $this->categoryKey($name);
-    //                     if (($mapIdPorKey[$oldKey] ?? null) === $id)
-    //                         unset($mapIdPorKey[$oldKey]);
-    //                     $mapIdPorKey[$this->categoryKey($nameDeseado)] = $id;
-
-    //                     $renombradas[] = [
-    //                         'id' => $id,
-    //                         'old' => ['name' => $name, 'slug' => $slug],
-    //                         'new' => ['name' => $nameDeseado, 'slug' => $slugFinal],
-    //                     ];
-
-    //                     SyncHistoryDetail::create([
-    //                         'sync_history_id' => $sync->id,
-    //                         'sku' => "CAT:{$id}",
-    //                         'tipo' => 'categoria_renombrada',
-    //                         'datos_anteriores' => ['id' => $id, 'name' => $name, 'slug' => $slug],
-    //                         'datos_nuevos' => ['id' => $id, 'name' => $nameDeseado, 'slug' => $slugFinal],
-    //                         'deltas' => [],
-    //                     ]);
-    //                 } else {
-    //                     $this->ensureCatSync($clienteNombre, $familiaMatch, [
-    //                         'id' => $id,
-    //                         'name' => $name,
-    //                         'slug' => $slug,
-    //                         'parent' => (int) ($cat['parent'] ?? 0),
-    //                         'count' => $count,
-    //                     ]);
-    //                 }
-    //             }
-    //         }
-
-    //         // === 6) Asegurar registro local para familias SiReTT ya existentes en Woo ===
-    //         $familiasYaEnWoo = $familiasSiReTT->filter(fn($f) => $wooByKey->has($this->catKey($f)));
-    //         Log::info('Familias SiReTT que ya existen en Woo (match exacto por key)', [
-    //             'cliente' => $clienteNombre,
-    //             'total' => $familiasYaEnWoo->count(),
-    //             'sample' => $familiasYaEnWoo->take(30)->values()->all(),
-    //         ]);
-
-    //         foreach ($familiasYaEnWoo as $familia) {
-    //             $k = $this->catKey($familia);
-    //             $wooCat = $wooByKey->get($k);
-    //             $wooArr = is_array($wooCat) ? $wooCat : (array) $wooCat;
-
-    //             $this->ensureCatSync($clienteNombre, $familia, [
-    //                 'id' => $wooArr['id'] ?? null,
-    //                 'name' => $wooArr['name'] ?? '',
-    //                 'slug' => $wooArr['slug'] ?? null,
-    //                 'parent' => (int) ($wooArr['parent'] ?? 0),
-    //                 'count' => (int) ($wooArr['count'] ?? 0),
-    //             ]);
-    //         }
-
-    //         // === 7) Crear faltantes desde SiReTT ===
-    //         $familiasParaCrear = $familiasSiReTT
-    //             ->map(fn($f) => [
-    //                 'original' => $f,
-    //                 'display' => $this->categoryDisplay($f),
-    //                 'slug' => $this->categorySlug($f),
-    //                 'key' => $this->categoryKey($f),
-    //             ])
-    //             ->filter(fn($row) => !isset($mapIdPorKey[$row['key']]))
-    //             ->values();
-
-    //         Log::info('Familias SiReTT que requieren creación en Woo', [
-    //             'cliente' => $clienteNombre,
-    //             'total' => $familiasParaCrear->count(),
-    //             'sample' => $familiasParaCrear->take(40)->values()->all(),
-    //         ]);
-
-    //         $creadas = [];
-    //         $erroresCreacion = [];
-
-    //         if ($familiasParaCrear->isNotEmpty()) {
-    //             foreach ($familiasParaCrear->chunk(100) as $chunkIndex => $chunk) {
-    //                 $expectedBySlug = [];
-
-    //                 $createPayload = $chunk->map(function ($row) use (&$slugExistente, &$expectedBySlug) {
-    //                     $slugFinal = $row['slug'];
-    //                     if (isset($slugExistente[$slugFinal])) {
-    //                         $slugFinal = $row['slug'] . '-' . uniqid();
-    //                     }
-    //                     $slugExistente[$slugFinal] = -1; // reservar
-    //                     $expectedBySlug[$slugFinal] = [
-    //                         'familia' => $row['original'],
-    //                         'key' => $row['key']
-    //                     ];
-    //                     return ['name' => $row['display'], 'slug' => $slugFinal];
-    //                 })->values()->all();
-
-    //                 Log::debug('Payload creación Woo desde familias SiReTT (chunk)', [
-    //                     'cliente' => $clienteNombre,
-    //                     'chunk' => $chunkIndex,
-    //                     'create_count' => count($createPayload),
-    //                     'expectedBySlug_sample' => array_slice($expectedBySlug, 0, min(25, count($expectedBySlug))),
-    //                 ]);
-
-    //                 $res = Http::retry(3, 2000)
-    //                     ->withBasicAuth($credWoo->user, $credWoo->password)
-    //                     ->timeout(120)
-    //                     ->post("{$credWoo->base_url}/products/categories/batch", [
-    //                         'create' => $createPayload
-    //                     ]);
-
-    //                 if ($res->successful()) {
-    //                     $created = collect(($res->json())['create'] ?? []);
-    //                     foreach ($created as $cat) {
-    //                         $creadas[] = [
-    //                             'id' => $cat['id'] ?? null,
-    //                             'name' => $cat['name'] ?? null,
-    //                             'slug' => $cat['slug'] ?? null
-    //                         ];
-
-    //                         // Vinculación de la nueva categoría con su familia SiReTT de origen
-    //                         $slugCreated = $cat['slug'] ?? null;
-    //                         $familia = ($slugCreated && isset($expectedBySlug[$slugCreated]))
-    //                             ? $expectedBySlug[$slugCreated]['familia']
-    //                             : ($cat['name'] ?? null);
-
-    //                         Log::debug('Categoría Woo creada desde familia SiReTT', [
-    //                             'woo_id' => $cat['id'] ?? null,
-    //                             'woo_name' => $cat['name'] ?? null,
-    //                             'slug' => $slugCreated,
-    //                             'familia_origen' => $familia,
-    //                         ]);
-
-    //                         SyncHistoryDetail::create([
-    //                             'sync_history_id' => $sync->id,
-    //                             'sku' => "CAT:" . ($cat['id'] ?? 'new'),
-    //                             'tipo' => 'categoria_creada',
-    //                             'datos_anteriores' => [],
-    //                             'datos_nuevos' => $cat ?? [],
-    //                             'deltas' => [],
-    //                         ]);
-
-    //                         $this->ensureCatSync($clienteNombre, $familia, [
-    //                             'id' => $cat['id'] ?? null,
-    //                             'name' => $cat['name'] ?? null,
-    //                             'slug' => $cat['slug'] ?? null,
-    //                             'parent' => (int) ($cat['parent'] ?? 0),
-    //                             'count' => (int) ($cat['count'] ?? 0),
-    //                         ]);
-    //                     }
-    //                 } else {
-    //                     $body = $res->body();
-    //                     $erroresCreacion[] = $body;
-    //                     Log::error('Error creando categorías en Woo desde familias SiReTT', [
-    //                         'cliente' => $clienteNombre,
-    //                         'status' => $res->status(),
-    //                         'body' => $body,
-    //                     ]);
-    //                 }
-    //             }
-    //         }
-
-    //         // === 7.1) BACKFILL FINAL: completar familias NULL (exacto, containment, fuzzy) ===
-    //         $ahora = now('America/Managua');
-    //         $backfillUpdated = 0;
-
-    //         CategoriaSincronizada::where('cliente', $clienteNombre)
-    //             ->where(function ($q) {
-    //                 $q->whereNull('familia_sirett')->orWhereNull('familia_sirett_key');
-    //             })
-    //             ->orderBy('id')
-    //             ->chunk(500, function ($rows) use ($debugMatchFamilia, $ahora, &$backfillUpdated) {
-    //                 foreach ($rows as $row) {
-    //                     // Intentos: key_normalized -> nombre -> slug(espacios)
-    //                     $familia = null;
-    //                     $dbgUsed = null;
-
-    //                     if ($row->key_normalized) {
-    //                         $dbg = $debugMatchFamilia($row->key_normalized);
-    //                         $familia = $dbg['familia'];
-    //                         $dbgUsed = ['src' => 'key_normalized', 'dbg' => $dbg];
-    //                     }
-    //                     if (!$familia && !empty($row->nombre)) {
-    //                         $dbg = $debugMatchFamilia($row->nombre);
-    //                         $familia = $dbg['familia'];
-    //                         $dbgUsed = ['src' => 'nombre', 'dbg' => $dbg];
-    //                     }
-    //                     if (!$familia && !empty($row->slug)) {
-    //                         $dbg = $debugMatchFamilia(str_replace('-', ' ', $row->slug));
-    //                         $familia = $dbg['familia'];
-    //                         $dbgUsed = ['src' => 'slug', 'dbg' => $dbg];
-    //                     }
-
-    //                     if ($familia) {
-    //                         $famKey = $this->catKey($familia);
-
-    //                         $needsUpdate = false;
-    //                         if (empty($row->familia_sirett)) {
-    //                             $row->familia_sirett = $familia;
-    //                             $needsUpdate = true;
-    //                         }
-    //                         if (empty($row->familia_sirett_key)) {
-    //                             $row->familia_sirett_key = $famKey;
-    //                             $needsUpdate = true;
-    //                         }
-
-    //                         if ($needsUpdate) {
-    //                             $row->updated_at = $ahora; // Managua
-    //                             $row->save();
-    //                             $backfillUpdated++;
-
-    //                             // Log de la primera docena de fills
-    //                             if ($backfillUpdated <= 12) {
-    //                                 Log::debug('Backfill familia aplicado', [
-    //                                     'row_id' => $row->id,
-    //                                     'src' => $dbgUsed['src'] ?? null,
-    //                                     'method' => $dbgUsed['dbg']['method'] ?? null,
-    //                                     'name_key' => $dbgUsed['dbg']['name_key'] ?? null,
-    //                                     'fam_key' => $dbgUsed['dbg']['fam_key'] ?? null,
-    //                                     'familia' => $familia,
-    //                                 ]);
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             });
-
-    //         Log::info('Backfill familias completado', [
-    //             'cliente' => $clienteNombre,
-    //             'actualizadas' => $backfillUpdated,
-    //         ]);
-
-    //         // === 8) Cerrar historial ===
-    //         $fin = now('America/Managua');
-    //         $duracion = $inicio->floatDiffInSeconds($fin);
-
-    //         $sync->update([
-    //             'finished_at' => $fin,
-    //             'total_creados' => count($creadas),
-    //             'total_actualizados' => count($renombradas),
-    //             'total_omitidos' => 0,
-    //             'total_fallidos_categoria' => count($deleteErrors) + count($erroresCreacion),
-    //         ]);
-
-    //         if (method_exists($this, 'notificarTelegram')) {
-    //             $msg = "🗂 <b>Sync Categorías</b> <b>{$clienteNombre}</b>\n"
-    //                 . "🧹 Duplicados: grupos={$dup_groups}, candidatas={$dup_candidates}, eliminadas=" . count($deleted) . "\n"
-    //                 . "✏️ Renombradas: <b>" . count($renombradas) . "</b>\n"
-    //                 . "🆕 Creadas: <b>" . count($creadas) . "</b>\n"
-    //                 . "⏱️ Duración: <b>" . number_format($duracion, 2) . "s</b>";
-    //             $this->notificarTelegram($clienteNombre, $msg);
-    //         }
-
-    //         return response()->json([
-    //             'sync_history_id' => $sync->id,
-    //             'mensaje' => 'Limpieza de duplicados, baseline local, backfill de familias (con logs SiReTT) y sincronización completada',
-    //             'cliente' => $clienteNombre,
-    //             'duplicados' => [
-    //                 'grupos_encontrados' => $dup_groups,
-    //                 'candidatas_a_borrar' => $dup_candidates,
-    //                 'eliminadas_total' => count($deleted),
-    //                 'eliminadas_ids' => $deleted,
-    //                 'errores_eliminacion' => $deleteErrors,
-    //             ],
-    //             'resumen_categorias_woo' => [
-    //                 'total' => $categoriasWoo->count(),
-    //                 'por_categoria' => $productosPorCategoria,
-    //             ],
-    //             'renombradas_total' => count($renombradas),
-    //             'renombradas' => $renombradas,
-    //             'creadas_total' => count($creadas),
-    //             'creadas' => $creadas,
-    //             'total_familias_sirett' => $familiasSiReTT->count(),
-    //             'inicio' => $inicio->format('Y-m-d H:i:s'),
-    //             'fin' => $fin->format('Y-m-d H:i:s'),
-    //             'duracion' => number_format($duracion, 2) . 's',
-    //         ]);
-
-    //     } catch (\Throwable $e) {
-    //         $fin = now('America/Managua');
-    //         $sync->update([
-    //             'finished_at' => $fin,
-    //             'total_creados' => 0,
-    //             'total_actualizados' => 0,
-    //             'total_omitidos' => 0,
-    //             'total_fallidos_categoria' => 1,
-    //         ]);
-
-    //         if (method_exists($this, 'notificarErrorTelegram')) {
-    //             $this->notificarErrorTelegram($clienteNombre, 'Excepción categorías: ' . $e->getMessage());
-    //         }
-
-    //         Log::error('Sync categorías: excepción no controlada', [
-    //             'cliente' => $clienteNombre,
-    //             'error' => $e->getMessage(),
-    //             'trace' => $e->getTraceAsString(),
-    //         ]);
-
-    //         return response()->json([
-    //             'error' => 'Excepción no controlada',
-    //             'detalle' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
     public function syncSirettCategoriesToWoo(string $clienteNombre, Request $request)
     {
-        $RENAME_EXISTING = true;
+        // === COMPARACIÓN ESTRICTA (sin acentos) ===
+        $normalize = function (?string $s): string {
+            $s = is_string($s) ? $s : '';
+            // minúsculas + colapsar espacios
+            $s = Str::of($s)->lower()->squish()->toString();
+            // quitar acentos/tildes (sin cambiar el texto original en Woo/SiReTT, solo para COMPARAR)
+            $noAcc = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
+            if ($noAcc !== false && $noAcc !== null)
+                $s = $noAcc;
+            // normalizar espacios
+            $s = preg_replace('/\s+/', ' ', $s);
+            return trim($s);
+        };
 
         // === Zona horaria a nivel de sesión MySQL (timestamps por defecto) ===
         try {
@@ -904,9 +47,7 @@ class ApiTestController extends Controller
             Log::warning('No se pudo establecer time_zone de la sesión MySQL', ['error' => $e->getMessage(), 'cliente' => $clienteNombre]);
         }
 
-        // Límite de muestras en logs para no saturar
         $LOG_SAMPLE_LIMIT = 60;
-
         $inicio = now('America/Managua');
         $sync = SyncHistory::create([
             'cliente' => $clienteNombre,
@@ -933,318 +74,249 @@ class ApiTestController extends Controller
             }
 
             // ------------------------------------------------------------------
-            // === 1) SiReTT: obtener ITEMS (productos) y familias únicas (+IDs)
-            //   - Reintenta con varios formatos de parámetros
-            //   - Loguea request/response size, tiempo y muestras
-            // ------------------------------------------------------------------
+// === 1) SiReTT: obtener ITEMS (productos) — robusto ===
+// ------------------------------------------------------------------
             $items = [];
-            $sirettAttempts = [];
+            $sirettDiag = [
+                'attempts' => [],
+                'wsdl_functions' => [],
+            ];
+
             try {
                 $wsdl = rtrim($credSirett->base_url ?? '', '/') . '?wsdl';
                 Log::info('Conectando a SiReTT SOAP', ['wsdl' => $wsdl, 'cliente' => $clienteNombre]);
 
-                // Cliente SOAP con trazas y sin cache de WSDL (para ver cambios inmediatos)
                 $soapOpts = [
                     'trace' => 1,
                     'exceptions' => true,
-                    'connection_timeout' => 60,
+                    'connection_timeout' => 90,
                     'cache_wsdl' => WSDL_CACHE_NONE,
                     'soap_version' => SOAP_1_1,
                     'encoding' => 'UTF-8',
+                    'compression' => SOAP_COMPRESSION_ACCEPT | SOAP_COMPRESSION_GZIP,
                     'stream_context' => stream_context_create([
                         'http' => ['user_agent' => 'PHP-SOAP/CategorySync'],
                     ]),
                 ];
                 $client = new \SoapClient($wsdl, $soapOpts);
 
-                // Intentos con diferentes firmas de parámetros
-                $paramStruct = [
-                    'ws_pid' => $credSirett->user,
-                    'ws_passwd' => $credSirett->password,
-                    'bid' => $credSirett->extra,
-                ];
-                $paramList = [$credSirett->user, $credSirett->password, $credSirett->extra];
+                // Loguea métodos disponibles (firma exacta)
+                try {
+                    $funcs = $client->__getFunctions();
+                    $sirettDiag['wsdl_functions'] = $funcs;
+                    Log::debug('SiReTT __getFunctions()', ['methods' => $funcs]);
+                } catch (\Throwable $e) {
+                    Log::debug('__getFunctions() falló', ['error' => $e->getMessage()]);
+                }
 
-                $attempts = [
-                    ['label' => 'struct_array', 'call' => fn() => $client->__soapCall('wsp_request_items', [$paramStruct])],
-                    ['label' => 'struct_direct', 'call' => fn() => $client->__soapCall('wsp_request_items', $paramStruct)],
-                    ['label' => 'positional_array', 'call' => fn() => $client->__soapCall('wsp_request_items', [$paramList])],
-                    ['label' => 'method_direct', 'call' => fn() => $client->wsp_request_items($paramStruct)],
-                    ['label' => 'positional_args', 'call' => fn() => $client->__soapCall('wsp_request_items', $paramList)],
+                // Helpers de parseo
+                $parseToArray = function ($resp) {
+                    // 1) stdClass/array -> array
+                    $arr = json_decode(json_encode($resp), true);
+
+                    // 2) Si trae data como array directo
+                    if (isset($arr['data']) && is_array($arr['data'])) {
+                        return $arr['data'];
+                    }
+
+                    // 3) Si trae data como string (JSON o XML)
+                    if (isset($arr['data']) && is_string($arr['data'])) {
+                        $s = trim($arr['data']);
+                        // JSON
+                        if ($s !== '' && ($s[0] === '{' || $s[0] === '[')) {
+                            $j = json_decode($s, true);
+                            if (is_array($j)) {
+                                // algunos devuelven { data: [...] } otra vez
+                                if (isset($j['data']) && is_array($j['data']))
+                                    return $j['data'];
+                                return $j;
+                            }
+                        }
+                        // XML (a veces)
+                        if (stripos($s, '<') === 0) {
+                            try {
+                                $xml = @simplexml_load_string($s, 'SimpleXMLElement', LIBXML_NOCDATA);
+                                if ($xml) {
+                                    $json = json_decode(json_encode($xml), true);
+                                    // Busca un nodo que luzca como lista de items
+                                    foreach (['items', 'item', 'rows', 'row', 'Data', 'data'] as $k) {
+                                        if (isset($json[$k])) {
+                                            return is_array($json[$k]) ? $json[$k] : [$json[$k]];
+                                        }
+                                    }
+                                    return is_array($json) ? $json : [];
+                                }
+                            } catch (\Throwable $e) {
+                            }
+                        }
+                    }
+
+                    // 4) Algunos RPC devuelven <MethodResult>...
+                    foreach ($arr as $k => $v) {
+                        if (is_string($k) && str_ends_with(strtolower($k), 'result')) {
+                            if (is_string($v)) {
+                                $s = trim($v);
+                                if ($s !== '' && ($s[0] === '{' || $s[0] === '[')) {
+                                    $j = json_decode($s, true);
+                                    if (isset($j['data']) && is_array($j['data']))
+                                        return $j['data'];
+                                    if (is_array($j))
+                                        return $j;
+                                }
+                            } elseif (is_array($v)) {
+                                if (isset($v['data']) && is_array($v['data']))
+                                    return $v['data'];
+                                return $v;
+                            }
+                        }
+                    }
+
+                    // 5) fallback
+                    return isset($arr['data']) && is_array($arr['data']) ? $arr['data'] : [];
+                };
+
+                $saveRaw = function (\SoapClient $client, string $label, int $syncId) {
+                    try {
+                        $req = $client->__getLastRequest();
+                        $res = $client->__getLastResponse();
+                        $base = "sirett_{$syncId}_" . $label;
+                        @file_put_contents(storage_path("logs/{$base}_request.xml"), $req);
+                        @file_put_contents(storage_path("logs/{$base}_response.xml"), $res);
+                        return [
+                            'request_bytes' => is_string($req) ? strlen($req) : null,
+                            'response_bytes' => is_string($res) ? strlen($res) : null,
+                            'raw_files' => ["{$base}_request.xml", "{$base}_response.xml"],
+                        ];
+                    } catch (\Throwable $e) {
+                        return ['raw_error' => $e->getMessage()];
+                    }
+                };
+
+                $user = (string) $credSirett->user;
+                $pass = (string) $credSirett->password;
+                $bid = (string) ($credSirett->extra ?? '0');
+
+                $struct = ['ws_pid' => $user, 'ws_passwd' => $pass, 'bid' => $bid];
+                $positional = [$user, $pass, $bid];
+                $soapParams = [
+                    new \SoapParam($user, 'ws_pid'),
+                    new \SoapParam($pass, 'ws_passwd'),
+                    new \SoapParam($bid, 'bid'),
                 ];
 
-                $lastReq = null;
-                $lastResp = null;
-                $rawFiles = [];
-                foreach ($attempts as $idx => $a) {
+                // Intentos: dos nombres de método x cuatro firmas
+                $methodNames = ['wsp_request_items', 'wsp_request_bodega_all_items'];
+                $attempts = [];
+
+                foreach ($methodNames as $m) {
+                    $attempts[] = ['label' => "{$m}_struct_array", 'call' => fn() => $client->__soapCall($m, [$struct])];
+                    $attempts[] = ['label' => "{$m}_positional_array", 'call' => fn() => $client->__soapCall($m, [$positional])];
+                    $attempts[] = ['label' => "{$m}_soapparams", 'call' => fn() => $client->__soapCall($m, $soapParams)];
+                    $attempts[] = ['label' => "{$m}_direct_struct", 'call' => fn() => $client->$m($struct)];
+                }
+
+                foreach ($attempts as $a) {
                     $t0 = microtime(true);
                     $label = $a['label'];
                     try {
-                        Log::info('SiReTT intento de llamada', [
-                            'attempt' => $label,
-                            'idx' => $idx,
-                            'has_user' => !empty($credSirett->user),
-                            'has_pass' => !empty($credSirett->password),
-                            'bid' => $credSirett->extra,
-                        ]);
-
                         $resp = $a['call']();
                         $elapsed = (microtime(true) - $t0) * 1000.0;
+                        $rawInfo = $saveRaw($client, $label, $sync->id);
 
-                        // Métricas de tráfico SOAP
-                        try {
-                            $lastReq = $client->__getLastRequest();
-                            $lastResp = $client->__getLastResponse();
+                        $data = $parseToArray($resp);
+                        $count = is_array($data) ? count($data) : 0;
 
-                            // Guardar RAW de la respuesta por intento (para auditoría puntual)
-                            $fileBase = 'sirett_' . $sync->id . '_' . $label;
-                            $respFile = storage_path("logs/{$fileBase}_resp.xml");
-                            @file_put_contents($respFile, $lastResp);
-                            $rawFiles[] = basename($respFile);
-
-                            Log::debug('SiReTT SOAP tráfico', [
-                                'attempt' => $label,
-                                'request_bytes' => is_string($lastReq) ? strlen($lastReq) : null,
-                                'response_bytes' => is_string($lastResp) ? strlen($lastResp) : null,
-                                'elapsed_ms' => round($elapsed, 2),
-                                'raw_file' => basename($respFile),
-                            ]);
-                        } catch (\Throwable $e) {
-                            Log::debug('No se pudo registrar lastRequest/lastResponse', ['attempt' => $label, 'error' => $e->getMessage()]);
-                        }
-
-                        $arr = json_decode(json_encode($resp), true);
-                        $dataTmp = $arr['data'] ?? [];
-                        $totalTmp = is_array($dataTmp) ? count($dataTmp) : 0;
-
-                        $sirettAttempts[] = [
-                            'attempt' => $label,
+                        $sirettDiag['attempts'][] = [
+                            'label' => $label,
                             'ok' => true,
-                            'items' => $totalTmp,
-                            'elapsed_ms' => round($elapsed, 2),
-                        ];
+                            'items' => $count,
+                            'elapsed_ms' => round($elapsed, 2)
+                        ] + $rawInfo;
 
-                        Log::info('SiReTT respuesta procesada por intento', [
-                            'attempt' => $label,
-                            'cliente' => $clienteNombre,
-                            'items_total' => $totalTmp,
-                            'has_data' => array_key_exists('data', $arr),
-                            'root_keys' => array_keys($arr),
-                        ]);
+                        Log::info('SiReTT intento OK', ['label' => $label, 'items' => $count, 'elapsed_ms' => round($elapsed, 2)]);
 
-                        // Tomar el primer intento que devuelva datos
-                        if ($totalTmp > 0) {
-                            $items = $dataTmp;
+                        if ($count > 0) {
+                            $items = $data;
                             break;
                         }
                     } catch (\Throwable $ex) {
                         $elapsed = (microtime(true) - $t0) * 1000.0;
-                        $sirettAttempts[] = [
-                            'attempt' => $label,
+                        $rawInfo = $saveRaw($client, $label . '_ERR', $sync->id);
+
+                        $sirettDiag['attempts'][] = [
+                            'label' => $label,
                             'ok' => false,
                             'error' => $ex->getMessage(),
-                            'elapsed_ms' => round($elapsed, 2),
-                        ];
-                        Log::warning('SiReTT intento fallido', [
-                            'attempt' => $label,
-                            'error' => $ex->getMessage(),
-                            'elapsed_ms' => round($elapsed, 2),
-                        ]);
+                            'elapsed_ms' => round($elapsed, 2)
+                        ] + $rawInfo;
+
+                        Log::warning('SiReTT intento fallido', ['label' => $label, 'error' => $ex->getMessage(), 'elapsed_ms' => round($elapsed, 2)]);
                     }
                 }
 
-                // Log resumen de intentos
-                Log::info('SiReTT intentos realizados', [
-                    'cliente' => $clienteNombre,
-                    'attempts' => $sirettAttempts,
-                ]);
-
-                // Si no hay items después de todos los intentos => devolver error con pista
-                if (!is_array($items) || count($items) === 0) {
-                    // Guardar último response (si existe) como ayuda
-                    if (!empty($lastResp)) {
-                        $failFile = storage_path("logs/sirett_{$sync->id}_lastresp_empty.xml");
-                        @file_put_contents($failFile, $lastResp);
-                    }
-                    Log::critical('SiReTT no devolvió productos (items vacío) tras múltiples intentos', [
+                // Muestra de campos clave para validar que realmente vienen productos
+                if (is_array($items) && count($items) > 0) {
+                    Log::debug('SiReTT items (sample familia/codigo/descripcion)', [
                         'cliente' => $clienteNombre,
-                        'wsdl' => $wsdl,
-                        'attempts' => $sirettAttempts,
-                        'raw_files' => $rawFiles,
+                        'sample' => array_map(function ($row) {
+                            return [
+                                'familia' => $row['familia'] ?? null,
+                                'codigo' => $row['codigo'] ?? ($row['item_code'] ?? null),
+                                'descripcion' => $row['descripcion'] ?? ($row['name'] ?? null),
+                            ];
+                        }, array_slice($items, 0, min(60, count($items)))),
                     ]);
-
-                    return response()->json([
-                        'error' => 'SiReTT no devolvió productos.',
-                        'detalle' => 'Ver logs para intentos, archivos RAW y tamaños de respuesta.',
-                        'attempts' => $sirettAttempts,
-                    ], 502);
                 }
 
-                // Muestras de items (solo campos relevantes)
-                $pick = function (array $row) {
-                    $keys = ['familia', 'family', 'familia_id', 'family_id', 'id_familia', 'codigo', 'item_code', 'sku', 'descripcion', 'name', 'precio', 'stock', 'marca', 'brand'];
-                    $out = [];
-                    foreach ($keys as $k)
-                        if (array_key_exists($k, $row))
-                            $out[$k] = $row[$k];
-                    if (!isset($out['familia']) && array_key_exists('family', $row))
-                        $out['familia'] = $row['family'];
-                    return $out;
-                };
-                Log::debug('SiReTT items (sample)', [
-                    'cliente' => $clienteNombre,
-                    'sample' => array_map($pick, array_slice($items, 0, min($LOG_SAMPLE_LIMIT, count($items)))),
-                ]);
-
-                // Guardar archivo JSON con una muestra amplia (hasta 1000) para auditoría
-                @file_put_contents(
-                    storage_path("logs/sirett_items_{$sync->id}_{$clienteNombre}.json"),
-                    json_encode(array_slice($items, 0, 1000), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-                );
-
-                // Distribución de familias (nombre + id si disponible)
-                $getFamName = function ($row) {
-                    $fam = $row['familia'] ?? ($row['family'] ?? null);
-                    return is_string($fam) ? trim($fam) : '';
-                };
-                $getFamId = function ($row) {
-                    foreach (['familia_id', 'family_id', 'id_familia', 'idfamilia', 'cod_familia', 'familycode'] as $k) {
-                        if (isset($row[$k]) && $row[$k] !== '')
-                            return $row[$k];
-                    }
-                    return null;
-                };
-
-                $familiaPairs = collect($items)->map(function ($r) use ($getFamName, $getFamId) {
-                    return ['id' => $getFamId($r), 'name' => $getFamName($r)];
-                });
-
-                $famWithId = $familiaPairs->filter(fn($p) => ($p['name'] ?? '') !== '' && $p['id'] !== null);
-                $famNoId = $familiaPairs->filter(fn($p) => ($p['name'] ?? '') !== '' && $p['id'] === null);
-
-                Log::info('SiReTT familias (conteos)', [
-                    'cliente' => $clienteNombre,
-                    'total_items' => count($items),
-                    'familias_con_id' => $famWithId->unique(fn($p) => $p['id'] . '|' . $p['name'])->count(),
-                    'familias_sin_id' => $famNoId->unique(fn($p) => $p['name'])->count(),
-                ]);
-
-                Log::debug('SiReTT familias con ID (sample)', [
-                    'sample' => $famWithId->unique(fn($p) => $p['id'] . '|' . $p['name'])
-                        ->take($LOG_SAMPLE_LIMIT)->values()->all(),
-                ]);
-                Log::debug('SiReTT familias sin ID (sample)', [
-                    'sample' => $famNoId->unique(fn($p) => $p['name'])
-                        ->take($LOG_SAMPLE_LIMIT)->values()->all(),
-                ]);
             } catch (\Throwable $e) {
                 Log::error('Error general al conectar/leer SiReTT', [
                     'cliente' => $clienteNombre,
                     'error' => $e->getMessage(),
                 ]);
-                return response()->json(['error' => 'Error al conectar con SiReTT', 'detalle' => $e->getMessage()], 500);
+                return response()->json([
+                    'error' => 'Error al conectar con SiReTT',
+                    'detalle' => $e->getMessage()
+                ], 500);
             }
 
-            // === 1.b) Extraer familias únicas por NOMBRE (para matching con Woo)
+            if (!is_array($items) || count($items) === 0) {
+                // deja rastro útil en la respuesta para depurar rápido
+                return response()->json([
+                    'error' => 'SiReTT no devolvió productos.',
+                    'diagnostico' => [
+                        'wsdl' => rtrim($credSirett->base_url ?? '', '/') . '?wsdl',
+                        'metodos' => $sirettDiag['wsdl_functions'],
+                        'intentos' => $sirettDiag['attempts'],
+                        'credenciales_set' => [
+                            'user' => !empty($credSirett->user),
+                            'pass' => !empty($credSirett->password),
+                            'bid' => (string) ($credSirett->extra ?? '0'),
+                        ],
+                    ],
+                ], 502);
+            }
+
+            // === 1.b) Familias únicas (TAL CUAL vienen en la clave "familia")
             $familiasSiReTT = collect($items)
                 ->map(function ($row) {
-                    $fam = $row['familia'] ?? ($row['family'] ?? null);
+                    // SOLO aceptar 'familia'; si no existe o no es string, se ignora
+                    $fam = $row['familia'] ?? null;
                     return is_string($fam) ? trim($fam) : '';
                 })
                 ->filter(fn($v) => $v !== '')
                 ->unique()
                 ->values();
 
-            Log::info('SiReTT: familias únicas (por nombre)', [
+            // Mapa normalizado -> nombre original EXACTO de SiReTT
+            $familiasMapNormToOriginal = $familiasSiReTT
+                ->mapWithKeys(fn($f) => [$normalize($f) => $f])
+                ->all();
+
+            Log::info('SiReTT: familias únicas (por nombre original)', [
                 'cliente' => $clienteNombre,
                 'total' => $familiasSiReTT->count(),
                 'sample' => $familiasSiReTT->take($LOG_SAMPLE_LIMIT)->values()->all(),
             ]);
-
-            // Mapa key_normalizada -> nombre familia
-            $familiasMap = $familiasSiReTT->mapWithKeys(fn($f) => [$this->catKey($f) => $f])->all();
-            Log::debug('SiReTT: mapa key_normalized -> familia (sample)', [
-                'sample' => collect($familiasMap)->take($LOG_SAMPLE_LIMIT)->all(),
-                'keys_total' => count($familiasMap),
-            ]);
-
-            // === matcher (exacto, containment, fuzzy) para nombre de familia ===
-            $matchFamiliaByKey = function (?string $normalizedKey) use ($familiasMap) {
-                if (!$normalizedKey)
-                    return null;
-                if (isset($familiasMap[$normalizedKey])) {
-                    return $familiasMap[$normalizedKey]; // exact
-                }
-                foreach ($familiasMap as $famKey => $desc) {
-                    if (strlen($famKey) >= 4 && str_contains($normalizedKey, $famKey))
-                        return $desc;
-                    if (strlen($normalizedKey) >= 4 && str_contains($famKey, $normalizedKey))
-                        return $desc;
-                }
-                $bestDesc = null;
-                $bestScore = 0.0;
-                foreach ($familiasMap as $famKey => $desc) {
-                    $maxLen = max(strlen($normalizedKey), strlen($famKey));
-                    if ($maxLen === 0)
-                        continue;
-                    $lev = levenshtein($normalizedKey, $famKey);
-                    $score = 1.0 - ($lev / $maxLen);
-                    if ($score > $bestScore) {
-                        $bestScore = $score;
-                        $bestDesc = $desc;
-                    }
-                }
-                return ($bestScore >= 0.75) ? $bestDesc : null;
-            };
-            $debugMatchFamilia = function (?string $text) use ($familiasMap) {
-                $result = ['familia' => null, 'method' => 'none', 'name_key' => null, 'fam_key' => null, 'score' => null];
-                if (!$text)
-                    return $result;
-                $key = $this->catKey($text);
-                $result['name_key'] = $key;
-                if (isset($familiasMap[$key])) {
-                    $result['familia'] = $familiasMap[$key];
-                    $result['method'] = 'exact';
-                    $result['fam_key'] = $key;
-                    return $result;
-                }
-                foreach ($familiasMap as $famKey => $desc) {
-                    if (strlen($famKey) >= 4 && str_contains($key, $famKey)) {
-                        $result['familia'] = $desc;
-                        $result['method'] = 'contain_cat_has_fam';
-                        $result['fam_key'] = $famKey;
-                        return $result;
-                    }
-                    if (strlen($key) >= 4 && str_contains($famKey, $key)) {
-                        $result['familia'] = $desc;
-                        $result['method'] = 'contain_fam_has_cat';
-                        $result['fam_key'] = $famKey;
-                        return $result;
-                    }
-                }
-                $bestDesc = null;
-                $bestKey = null;
-                $bestScore = 0.0;
-                foreach ($familiasMap as $famKey => $desc) {
-                    $maxLen = max(strlen($key), strlen($famKey));
-                    if ($maxLen === 0)
-                        continue;
-                    $lev = levenshtein($key, $famKey);
-                    $score = 1.0 - ($lev / $maxLen);
-                    if ($score > $bestScore) {
-                        $bestScore = $score;
-                        $bestDesc = $desc;
-                        $bestKey = $famKey;
-                    }
-                }
-                if ($bestScore >= 0.75) {
-                    $result['familia'] = $bestDesc;
-                    $result['method'] = 'fuzzy';
-                    $result['fam_key'] = $bestKey;
-                    $result['score'] = round($bestScore, 4);
-                }
-                return $result;
-            };
 
             // ------------------------------------------------------------------
             // === 2) Woo -> obtener TODAS las categorías (paginadas)
@@ -1261,10 +333,12 @@ class ApiTestController extends Controller
                         'orderby' => 'id',
                         'order' => 'asc'
                     ]);
+
                 if ($res->failed()) {
                     Log::error('Error HTTP obteniendo categorías de Woo', ['status' => $res->status(), 'body' => $res->body()]);
                     throw new \RuntimeException('Error al obtener categorías desde WooCommerce: ' . $res->body());
                 }
+
                 $batch = collect($res->json());
                 $categoriasWoo = $categoriasWoo->merge($batch);
                 $page++;
@@ -1273,11 +347,11 @@ class ApiTestController extends Controller
             Log::info('Woo: categorías obtenidas', [
                 'cliente' => $clienteNombre,
                 'total' => $categoriasWoo->count(),
-                'sample' => $categoriasWoo->take($LOG_SAMPLE_LIMIT)->map(function ($c) {
+                'sample' => $categoriasWoo->take($LOG_SAMPLE_LIMIT)->map(function ($c) use ($normalize) {
                     return [
                         'id' => $c['id'] ?? null,
                         'name' => $c['name'] ?? null,
-                        'name_k' => $this->catKey($c['name'] ?? ''),
+                        'name_norm' => $normalize($c['name'] ?? ''),
                         'slug' => $c['slug'] ?? null,
                         'parent' => (int) ($c['parent'] ?? 0),
                         'count' => (int) ($c['count'] ?? 0),
@@ -1285,74 +359,31 @@ class ApiTestController extends Controller
                 })->values()->all(),
             ]);
 
-            // Índices rápidos
-            $wooById = $categoriasWoo->keyBy('id');
-            $wooByKey = $categoriasWoo->keyBy(fn($c) => $this->catKey($c['name'] ?? ''));
+            // Índices: por nombre NORMALIZADO (sin acentos)
+            $wooByNormName = $categoriasWoo->keyBy(fn($c) => $normalize($c['name'] ?? ''));
 
             // ------------------------------------------------------------------
-            // === 3) BASELINE LOCAL: upsert de TODAS las categorías con familia SiReTT
+            // === 3) BASELINE LOCAL: upsert de TODAS las categorías con match EXACTO (sin acentos)
             // ------------------------------------------------------------------
-            $matchStats = ['exact' => 0, 'contain_cat_has_fam' => 0, 'contain_fam_has_cat' => 0, 'fuzzy' => 0, 'none' => 0];
-            $unmatchedSample = [];
-
-            foreach ($categoriasWoo as $i => $cat) {
+            foreach ($categoriasWoo as $cat) {
                 $name = $cat['name'] ?? '';
-                $count = (int) ($cat['count'] ?? 0);
-                $parentId = (int) ($cat['parent'] ?? 0);
-
-                $dbg = $debugMatchFamilia($name);
-                $familiaMatch = $dbg['familia'];
-                $method = $dbg['method'];
-                $matchStats[$method] = ($matchStats[$method] ?? 0) + 1;
-
-                if ($method === 'none' && count($unmatchedSample) < $LOG_SAMPLE_LIMIT) {
-                    $unmatchedSample[] = [
-                        'woo_id' => $cat['id'] ?? null,
-                        'name' => $name,
-                        'name_key' => $dbg['name_key'],
-                        'slug' => $cat['slug'] ?? null,
-                        'parent' => $parentId,
-                        'count' => $count,
-                    ];
-                }
-
-                if ($i < 30) {
-                    Log::debug('Match categoría Woo vs familia SiReTT (baseline)', [
-                        'woo_id' => $cat['id'] ?? null,
-                        'name' => $name,
-                        'name_key' => $dbg['name_key'],
-                        'method' => $method,
-                        'fam_key' => $dbg['fam_key'],
-                        'familia' => $familiaMatch,
-                        'score' => $dbg['score'],
-                    ]);
-                }
+                $norm = $normalize($name);
+                $familiaMatch = $familiasMapNormToOriginal[$norm] ?? null; // SOLO exacto sin acentos
 
                 $this->ensureCatSync($clienteNombre, $familiaMatch, [
                     'id' => $cat['id'] ?? null,
                     'name' => $name,
                     'slug' => $cat['slug'] ?? null,
-                    'parent' => $parentId,
-                    'count' => $count,
+                    'parent' => (int) ($cat['parent'] ?? 0),
+                    'count' => (int) ($cat['count'] ?? 0),
                 ]);
             }
 
-            Log::info('Resumen matching Woo vs SiReTT (familias por nombre)', [
-                'cliente' => $clienteNombre,
-                'stats' => $matchStats,
-                'unmatched_sample' => $unmatchedSample,
-            ]);
-
             // ------------------------------------------------------------------
-            // === 4) PRE-LIMPIEZA: eliminar duplicadas con count==0
+            // === 4) PRE-LIMPIEZA: eliminar duplicadas con count==0 (mismo nombre sin acentos)
             // ------------------------------------------------------------------
             $byId = $categoriasWoo->keyBy('id');
             $childrenByParent = $categoriasWoo->groupBy(fn($c) => (int) ($c['parent'] ?? 0));
-            $normalize = fn(string $n) => preg_replace(
-                '/\s+/',
-                ' ',
-                iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', Str::of($n)->lower()->squish()->toString()) ?: $n
-            );
             $groups = $categoriasWoo->groupBy(fn($c) => $normalize($c['name'] ?? ''));
 
             $dup_groups = 0;
@@ -1449,7 +480,7 @@ class ApiTestController extends Controller
                 ]);
             }
 
-            // Para resumen
+            // Resumen por categoría (post-limpieza)
             $productosPorCategoria = $categoriasWoo->map(fn($c) => [
                 'id' => $c['id'],
                 'name' => $c['name'] ?? '',
@@ -1457,117 +488,31 @@ class ApiTestController extends Controller
                 'count' => (int) ($c['count'] ?? 0),
             ])->values();
 
-            // Recalcular mapas
-            $mapIdPorKey = [];
+            // Recalcular índices
+            $wooByNormName = $categoriasWoo->keyBy(fn($c) => $normalize($c['name'] ?? ''));
             $slugExistente = [];
             foreach ($categoriasWoo as $cat) {
-                $id = $cat['id'];
-                $name = $cat['name'] ?? '';
                 $slug = $cat['slug'] ?? '';
-
-                $mapIdPorKey[$this->categoryKey($name)] = $id;
                 if ($slug !== '')
-                    $slugExistente[$slug] = $id;
+                    $slugExistente[$slug] = $cat['id'];
             }
 
             // ------------------------------------------------------------------
-            // === 5) Renombrado opcional ===
+            // === 5) (REMOVIDO) Renombrado: NO se renombra nada
             // ------------------------------------------------------------------
-            $renombradas = [];
-            if ($RENAME_EXISTING && $categoriasWoo->isNotEmpty()) {
-                foreach ($categoriasWoo as $cat) {
-                    $id = $cat['id'];
-                    $name = $cat['name'] ?? '';
-                    $slug = $cat['slug'] ?? '';
-                    $count = (int) ($cat['count'] ?? 0);
-
-                    $dbg = $debugMatchFamilia($name);
-                    $familiaMatch = $dbg['familia'];
-
-                    $nameDeseado = $this->categoryDisplay($name);
-                    $slugDeseado = $this->categorySlug($name);
-
-                    $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
-                    if (!$needsRename) {
-                        $this->ensureCatSync($clienteNombre, $familiaMatch, [
-                            'id' => $id,
-                            'name' => $name,
-                            'slug' => $slug,
-                            'parent' => (int) ($cat['parent'] ?? 0),
-                            'count' => $count,
-                        ]);
-                        continue;
-                    }
-
-                    $slugFinal = $slugDeseado;
-                    if (isset($slugExistente[$slugDeseado]) && $slugExistente[$slugDeseado] !== $id) {
-                        $slugFinal = $slugDeseado . '-' . $id;
-                    }
-
-                    $up = Http::retry(3, 2000)
-                        ->withBasicAuth($credWoo->user, $credWoo->password)
-                        ->timeout(120)
-                        ->put("{$credWoo->base_url}/products/categories/{$id}", [
-                            'name' => $nameDeseado,
-                            'slug' => $slugFinal
-                        ]);
-
-                    if ($up->successful()) {
-                        $this->ensureCatSync($clienteNombre, $familiaMatch, [
-                            'id' => $id,
-                            'name' => $nameDeseado,
-                            'slug' => $slugFinal,
-                            'parent' => (int) ($cat['parent'] ?? 0),
-                            'count' => $count,
-                        ]);
-
-                        unset($slugExistente[$slug]);
-                        $slugExistente[$slugFinal] = $id;
-
-                        $oldKey = $this->categoryKey($name);
-                        if (($mapIdPorKey[$oldKey] ?? null) === $id)
-                            unset($mapIdPorKey[$oldKey]);
-                        $mapIdPorKey[$this->categoryKey($nameDeseado)] = $id;
-
-                        $renombradas[] = [
-                            'id' => $id,
-                            'old' => ['name' => $name, 'slug' => $slug],
-                            'new' => ['name' => $nameDeseado, 'slug' => $slugFinal],
-                        ];
-
-                        SyncHistoryDetail::create([
-                            'sync_history_id' => $sync->id,
-                            'sku' => "CAT:{$id}",
-                            'tipo' => 'categoria_renombrada',
-                            'datos_anteriores' => ['id' => $id, 'name' => $name, 'slug' => $slug],
-                            'datos_nuevos' => ['id' => $id, 'name' => $nameDeseado, 'slug' => $slugFinal],
-                            'deltas' => [],
-                        ]);
-                    } else {
-                        $this->ensureCatSync($clienteNombre, $familiaMatch, [
-                            'id' => $id,
-                            'name' => $name,
-                            'slug' => $slug,
-                            'parent' => (int) ($cat['parent'] ?? 0),
-                            'count' => $count,
-                        ]);
-                    }
-                }
-            }
 
             // ------------------------------------------------------------------
-            // === 6) Asegurar tracking local para familias SiReTT que ya existen en Woo (match exacto por key)
+            // === 6) Asegurar tracking local para familias SiReTT que YA existen en Woo (match EXACTO sin acentos)
             // ------------------------------------------------------------------
-            $familiasYaEnWoo = $familiasSiReTT->filter(fn($f) => $wooByKey->has($this->catKey($f)));
-            Log::info('Familias SiReTT que ya existen en Woo (match exacto por key)', [
+            $familiasYaEnWoo = $familiasSiReTT->filter(fn($f) => $wooByNormName->has($normalize($f)));
+            Log::info('Familias SiReTT que ya existen en Woo (match exacto sin acentos)', [
                 'cliente' => $clienteNombre,
                 'total' => $familiasYaEnWoo->count(),
                 'sample' => $familiasYaEnWoo->take(30)->values()->all(),
             ]);
 
             foreach ($familiasYaEnWoo as $familia) {
-                $k = $this->catKey($familia);
-                $wooCat = $wooByKey->get($k);
+                $wooCat = $wooByNormName->get($normalize($familia));
                 $wooArr = is_array($wooCat) ? $wooCat : (array) $wooCat;
 
                 $this->ensureCatSync($clienteNombre, $familia, [
@@ -1580,16 +525,15 @@ class ApiTestController extends Controller
             }
 
             // ------------------------------------------------------------------
-            // === 7) Crear categorías faltantes desde familias SiReTT
+            // === 7) Crear categorías faltantes desde familias SiReTT (nombre EXACTO de SiReTT)
             // ------------------------------------------------------------------
             $familiasParaCrear = $familiasSiReTT
                 ->map(fn($f) => [
                     'original' => $f,
-                    'display' => $this->categoryDisplay($f),
-                    'slug' => $this->categorySlug($f),
-                    'key' => $this->categoryKey($f),
+                    'norm' => $normalize($f),
+                    'slug' => \Illuminate\Support\Str::slug($f), // slug estándar, nombre intacto
                 ])
-                ->filter(fn($row) => !isset($mapIdPorKey[$row['key']]))
+                ->filter(fn($row) => !$wooByNormName->has($row['norm']))
                 ->values();
 
             Log::info('Familias SiReTT que requieren creación en Woo', [
@@ -1606,16 +550,13 @@ class ApiTestController extends Controller
                     $expectedBySlug = [];
 
                     $createPayload = $chunk->map(function ($row) use (&$slugExistente, &$expectedBySlug) {
-                        $slugFinal = $row['slug'];
+                        $slugFinal = $row['slug'] !== '' ? $row['slug'] : 'cat-' . uniqid();
                         if (isset($slugExistente[$slugFinal])) {
-                            $slugFinal = $row['slug'] . '-' . uniqid();
+                            $slugFinal = $slugFinal . '-' . uniqid();
                         }
                         $slugExistente[$slugFinal] = -1; // reservar
-                        $expectedBySlug[$slugFinal] = [
-                            'familia' => $row['original'],
-                            'key' => $row['key']
-                        ];
-                        return ['name' => $row['display'], 'slug' => $slugFinal];
+                        $expectedBySlug[$slugFinal] = ['familia' => $row['original']];
+                        return ['name' => $row['original'], 'slug' => $slugFinal]; // nombre EXACTO de SiReTT
                     })->values()->all();
 
                     Log::debug('Payload creación Woo desde familias SiReTT (chunk)', [
@@ -1645,13 +586,6 @@ class ApiTestController extends Controller
                             $familia = ($slugCreated && isset($expectedBySlug[$slugCreated]))
                                 ? $expectedBySlug[$slugCreated]['familia']
                                 : ($cat['name'] ?? null);
-
-                            Log::debug('Categoría Woo creada desde familia SiReTT', [
-                                'woo_id' => $cat['id'] ?? null,
-                                'woo_name' => $cat['name'] ?? null,
-                                'slug' => $slugCreated,
-                                'familia_origen' => $familia,
-                            ]);
 
                             SyncHistoryDetail::create([
                                 'sync_history_id' => $sync->id,
@@ -1683,7 +617,7 @@ class ApiTestController extends Controller
             }
 
             // ------------------------------------------------------------------
-            // === 7.1) BACKFILL FINAL: completar familias NULL en tracking local
+            // === 7.1) BACKFILL FINAL de familias NULL en tracking local (match EXACTO sin acentos)
             // ------------------------------------------------------------------
             $ahora = now('America/Managua');
             $backfillUpdated = 0;
@@ -1693,54 +627,29 @@ class ApiTestController extends Controller
                     $q->whereNull('familia_sirett')->orWhereNull('familia_sirett_key');
                 })
                 ->orderBy('id')
-                ->chunk(500, function ($rows) use ($debugMatchFamilia, $ahora, &$backfillUpdated) {
+                ->chunk(500, function ($rows) use ($normalize, $familiasMapNormToOriginal, $ahora, &$backfillUpdated) {
                     foreach ($rows as $row) {
                         $familia = null;
-                        $dbgUsed = null;
 
-                        if ($row->key_normalized) {
-                            $dbg = $debugMatchFamilia($row->key_normalized);
-                            $familia = $dbg['familia'];
-                            $dbgUsed = ['src' => 'key_normalized', 'dbg' => $dbg];
-                        }
-                        if (!$familia && !empty($row->nombre)) {
-                            $dbg = $debugMatchFamilia($row->nombre);
-                            $familia = $dbg['familia'];
-                            $dbgUsed = ['src' => 'nombre', 'dbg' => $dbg];
+                        if (!empty($row->nombre)) {
+                            $norm = $normalize($row->nombre);
+                            $familia = $familiasMapNormToOriginal[$norm] ?? null;
                         }
                         if (!$familia && !empty($row->slug)) {
-                            $dbg = $debugMatchFamilia(str_replace('-', ' ', $row->slug));
-                            $familia = $dbg['familia'];
-                            $dbgUsed = ['src' => 'slug', 'dbg' => $dbg];
+                            $norm = $normalize(str_replace('-', ' ', $row->slug));
+                            $familia = $familiasMapNormToOriginal[$norm] ?? null;
+                        }
+                        if (!$familia && !empty($row->key_normalized)) {
+                            $norm = $normalize($row->key_normalized);
+                            $familia = $familiasMapNormToOriginal[$norm] ?? null;
                         }
 
                         if ($familia) {
-                            $famKey = $this->catKey($familia);
-                            $needsUpdate = false;
-                            if (empty($row->familia_sirett)) {
-                                $row->familia_sirett = $familia;
-                                $needsUpdate = true;
-                            }
-                            if (empty($row->familia_sirett_key)) {
-                                $row->familia_sirett_key = $famKey;
-                                $needsUpdate = true;
-                            }
-
-                            if ($needsUpdate) {
-                                $row->updated_at = $ahora; // Managua
-                                $row->save();
-                                $backfillUpdated++;
-                                if ($backfillUpdated <= 12) {
-                                    Log::debug('Backfill familia aplicado', [
-                                        'row_id' => $row->id,
-                                        'src' => $dbgUsed['src'] ?? null,
-                                        'method' => $dbgUsed['dbg']['method'] ?? null,
-                                        'name_key' => $dbgUsed['dbg']['name_key'] ?? null,
-                                        'fam_key' => $dbgUsed['dbg']['fam_key'] ?? null,
-                                        'familia' => $familia,
-                                    ]);
-                                }
-                            }
+                            $row->familia_sirett = $familia;
+                            $row->familia_sirett_key = $normalize($familia);
+                            $row->updated_at = $ahora;
+                            $row->save();
+                            $backfillUpdated++;
                         }
                     }
                 });
@@ -1757,7 +666,7 @@ class ApiTestController extends Controller
             $sync->update([
                 'finished_at' => $fin,
                 'total_creados' => count($creadas),
-                'total_actualizados' => count($renombradas),
+                'total_actualizados' => 0, // NO renombramos
                 'total_omitidos' => 0,
                 'total_fallidos_categoria' => count($deleteErrors) + count($erroresCreacion),
             ]);
@@ -1765,69 +674,38 @@ class ApiTestController extends Controller
             if (method_exists($this, 'notificarTelegram')) {
                 $msg = "🗂 <b>Sync Categorías</b> <b>{$clienteNombre}</b>\n"
                     . "🧹 Duplicados: grupos={$dup_groups}, candidatas={$dup_candidates}, eliminadas=" . count($deleted) . "\n"
-                    . "✏️ Renombradas: <b>" . count($renombradas) . "</b>\n"
+                    . "✏️ Renombradas: <b>0</b>\n"
                     . "🆕 Creadas: <b>" . count($creadas) . "</b>\n"
                     . "⏱️ Duración: <b>" . number_format($duracion, 2) . "s</b>";
                 $this->notificarTelegram($clienteNombre, $msg);
             }
 
             // Totales y lista de categorías con/sin productos en Woo
+            $totalConProductos = $categoriasWoo->filter(fn($c) => (int) ($c['count'] ?? 0) > 0)->count();
+            $totalSinProductos = $categoriasWoo->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)->count();
 
-            // $totalConProductos = $categoriasWoo
-            //     ->filter(fn($c) => (int) ($c['count'] ?? 0) > 0)
-            //     ->count();
-
-            // $totalSinProductos = $categoriasWoo
-            //     ->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)
-            //     ->count();
-
-            // // Lista detallada de categorías sin productos (ordenada alfabéticamente)
-            // $categoriasSinProductos = $categoriasWoo
-            //     ->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)
-            //     ->map(fn($c) => [
-            //         'id' => $c['id'] ?? null,
-            //         'name' => $c['name'] ?? '',
-            //         'slug' => $c['slug'] ?? '',
-            //     ])
-            //     ->sortBy(fn($c) => strtolower($c['name'])) // Orden alfabético por nombre
-            //     ->values();
-
-
-            // Totales y lista de categorías con/sin productos en Woo
-            $totalConProductos = $categoriasWoo
-                ->filter(fn($c) => (int) ($c['count'] ?? 0) > 0)
-                ->count();
-
-            $totalSinProductos = $categoriasWoo
-                ->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)
-                ->count();
-
-            // Lista detallada de categorías sin productos con posible match de SiReTT
+            // Lista detallada de categorías sin productos + posible match EXACTO (sin acentos)
             $categoriasSinProductos = $categoriasWoo
                 ->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)
-                ->map(function ($c) use ($debugMatchFamilia) {
-                    $dbg = $debugMatchFamilia($c['name'] ?? '');
-                    $method = $dbg['method'] ?? 'none';
-
-                    // Eliminable solo si el match es EXACTO
-                    $eliminable = ($method === 'exact');
-                    // Si quisieras incluir contenciones o fuzzy alto:
-                    // $eliminable = in_array($method, ['exact', 'contain_cat_has_fam', 'contain_fam_has_cat']) || (($method === 'fuzzy') && (($dbg['score'] ?? 0) >= 0.9));
-    
+                ->map(function ($c) use ($normalize, $familiasMapNormToOriginal) {
+                    $norm = $normalize($c['name'] ?? '');
+                    $fam = $familiasMapNormToOriginal[$norm] ?? null;
+                    $exact = $fam !== null;
                     return [
                         'id' => $c['id'] ?? null,
                         'name' => $c['name'] ?? '',
                         'slug' => $c['slug'] ?? '',
-                        'posible_familia_sirett' => $dbg['familia'] ?? null,
-                        'match_method' => $method,
-                        'match_score' => $dbg['score'] ?? null,
-                        'eliminable' => $eliminable, // <-- NUEVO
+                        'posible_familia_sirett' => $fam,
+                        'match_method' => $exact ? 'exact_no_accents' : 'none',
+                        'match_score' => null,
+                        // Mantengo tu semántica previa (eliminable si hay match exacto)
+                        'eliminable' => $exact,
                     ];
                 })
-                ->sortBy(fn($c) => strtolower($c['name'])) // Orden alfabético
+                ->sortBy(fn($c) => strtolower($c['name']))
                 ->values();
 
-            // === Guardar resumen de categorías sin productos eliminables en el historial ===
+            // Guardar resumen de eliminables
             $categoriasEliminables = $categoriasSinProductos
                 ->filter(fn($c) => $c['eliminable'] === true)
                 ->values();
@@ -1837,7 +715,7 @@ class ApiTestController extends Controller
                     'sync_history_id' => $sync->id,
                     'sku' => "CAT:ELIMINABLES",
                     'tipo' => 'categorias_sin_productos_eliminables',
-                    'datos_anteriores' => [], // No aplica
+                    'datos_anteriores' => [],
                     'datos_nuevos' => [
                         'total_eliminables' => $categoriasEliminables->count(),
                         'categorias' => $categoriasEliminables->all()
@@ -1852,13 +730,9 @@ class ApiTestController extends Controller
                 ]);
             }
 
-
-
-
-
             return response()->json([
                 'sync_history_id' => $sync->id,
-                'mensaje' => 'Limpieza de duplicados, baseline local, backfill de familias (con logs SiReTT) y sincronización completada',
+                'mensaje' => 'Baseline local, limpieza de duplicados, backfill de familias y sincronización completada (match exacto sin acentos, sin renombrar).',
                 'cliente' => $clienteNombre,
                 'duplicados' => [
                     'grupos_encontrados' => $dup_groups,
@@ -1867,22 +741,13 @@ class ApiTestController extends Controller
                     'eliminadas_ids' => $deleted,
                     'errores_eliminacion' => $deleteErrors,
                 ],
-                // 'resumen_categorias_woo' => [
-                //     'total' => $categoriasWoo->count(),
-                //     'total_con_productos' => $totalConProductos,    // <-- NUEVO
-                //     'total_sin_productos' => $totalSinProductos,    // <-- NUEVO
-                //     'categorias_sin_productos' => $categoriasSinProductos, // <-- NUEVO
-                //     'por_categoria' => $productosPorCategoria,
-                // ],
                 'resumen_categorias_woo' => [
                     'total' => $categoriasWoo->count(),
                     'total_con_productos' => $totalConProductos,
                     'total_sin_productos' => $totalSinProductos,
-                    'categorias_sin_productos' => $categoriasSinProductos, // Lista ordenada + match SiReTT
+                    'categorias_sin_productos' => $categoriasSinProductos,
                     'por_categoria' => $productosPorCategoria,
                 ],
-                'renombradas_total' => count($renombradas),
-                'renombradas' => $renombradas,
                 'creadas_total' => count($creadas),
                 'creadas' => $creadas,
                 'total_familias_sirett' => $familiasSiReTT->count(),
@@ -1917,8 +782,6 @@ class ApiTestController extends Controller
             ], 500);
         }
     }
-
-    // ===================== HELPERS =====================
 
 
 
@@ -2001,209 +864,6 @@ class ApiTestController extends Controller
 
 
 
-    // {
-    //     $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-    //     if (!$credWoo)
-    //         return response()->json(['error' => 'Credenciales Woo no encontradas'], 404);
-
-    //     // traer todas
-    //     $cats = collect();
-    //     $page = 1;
-    //     do {
-    //         $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //             ->timeout(60)
-    //             ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page, 'orderby' => 'id', 'order' => 'asc']);
-    //         if ($res->failed())
-    //             return response()->json(['error' => 'Woo error', 'detalle' => $res->body()], 500);
-    //         $batch = collect($res->json());
-    //         $cats = $cats->merge($batch);
-    //         $page++;
-    //     } while ($batch->count() > 0);
-
-    //     $byId = $cats->keyBy('id');
-    //     $childrenByParent = $cats->groupBy(fn($c) => (int) ($c['parent'] ?? 0));
-
-    //     $toDelete = $cats->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)->pluck('id')->values();
-    //     $deleted = [];
-    //     $errors = [];
-    //     $passes = 0;
-    //     $max = 10;
-
-    //     // eliminar hojas primero y evitar padres con hijos existentes
-    //     while ($toDelete->isNotEmpty() && $passes < $max) {
-    //         $passes++;
-    //         $set = $toDelete->flip();
-
-    //         $leafIds = $toDelete->filter(function ($id) use ($childrenByParent, $set) {
-    //             $children = $childrenByParent->get($id, collect());
-    //             // solo es leaf si no tiene hijos o TODOS sus hijos también están en la lista a borrar
-    //             foreach ($children as $ch) {
-    //                 if (!isset($set[$ch['id']]))
-    //                     return false;
-    //             }
-    //             return true;
-    //         })->values();
-
-    //         if ($leafIds->isEmpty())
-    //             break;
-
-    //         foreach ($leafIds as $id) {
-    //             $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //                 ->timeout(60)
-    //                 ->delete("{$credWoo->base_url}/products/categories/{$id}", ['force' => true]);
-
-    //             if ($res->successful())
-    //                 $deleted[] = $id;
-    //             else
-    //                 $errors[] = ['id' => $id, 'http' => $res->status(), 'body' => $res->body()];
-
-    //             $toDelete = $toDelete->reject(fn($x) => $x === $id)->values();
-    //         }
-    //     }
-
-    //     return response()->json([
-    //         'mensaje' => 'Eliminación masiva de categorías con count==0 finalizada',
-    //         'intentadas' => count($deleted) + count($errors),
-    //         'eliminadas' => $deleted,
-    //         'errores' => $errors,
-    //     ]);
-    // }
-
-    // public function deleteOneZeroCountCategory(string $clienteNombre, int $id)
-    // {
-    //     $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-    //     if (!$credWoo)
-    //         return response()->json(['error' => 'Credenciales Woo no encontradas'], 404);
-
-    //     // traer la categoría
-    //     $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //         ->timeout(30)
-    //         ->get("{$credWoo->base_url}/products/categories/{$id}");
-    //     if ($res->failed())
-    //         return response()->json(['error' => 'No se pudo leer categoría', 'detalle' => $res->body()], 500);
-
-    //     $cat = $res->json();
-    //     if ((int) ($cat['count'] ?? 0) !== 0) {
-    //         return response()->json(['error' => 'La categoría tiene productos asociados (count > 0).'], 422);
-    //     }
-
-    //     // comprobar hijos
-    //     $hasChildren = false;
-    //     $page = 1;
-    //     do {
-    //         $lr = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //             ->timeout(30)
-    //             ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page, 'parent' => $id]);
-    //         if ($lr->failed())
-    //             break;
-    //         $batch = collect($lr->json());
-    //         if ($batch->isNotEmpty()) {
-    //             $hasChildren = true;
-    //             break;
-    //         }
-    //         $page++;
-    //     } while ($batch->count() > 0);
-
-    //     if ($hasChildren) {
-    //         return response()->json(['error' => 'La categoría tiene subcategorías; elimínalas primero.'], 422);
-    //     }
-
-    //     $del = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //         ->timeout(30)
-    //         ->delete("{$credWoo->base_url}/products/categories/{$id}", ['force' => true]);
-
-    //     if ($del->failed()) {
-    //         return response()->json(['error' => 'No se pudo eliminar', 'detalle' => $del->body()], 500);
-    //     }
-
-    //     return response()->json(['mensaje' => 'Categoría eliminada', 'id' => $id]);
-    // }
-
-    // public function deleteAllZeroCountCategories(string $clienteNombre)
-    // {
-    //     $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-    //     if (!$credWoo) {
-    //         return response()->json(['error' => 'Credenciales Woo no encontradas'], 404);
-    //     }
-
-    //     // traer todas
-    //     $cats = collect();
-    //     $page = 1;
-    //     do {
-    //         $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //             ->timeout(60)
-    //             ->get("{$credWoo->base_url}/products/categories", [
-    //                 'per_page' => 100,
-    //                 'page' => $page,
-    //                 'orderby' => 'id',
-    //                 'order' => 'asc'
-    //             ]);
-    //         if ($res->failed()) {
-    //             return response()->json(['error' => 'Woo error', 'detalle' => $res->body()], 500);
-    //         }
-    //         $batch = collect($res->json());
-    //         $cats = $cats->merge($batch);
-    //         $page++;
-    //     } while ($batch->count() > 0);
-
-    //     $childrenByParent = $cats->groupBy(fn($c) => (int) ($c['parent'] ?? 0));
-
-    //     $toDelete = $cats->filter(fn($c) => (int) ($c['count'] ?? 0) === 0)->pluck('id')->values();
-    //     $deletedWoo = [];
-    //     $deletedDb = [];
-    //     $errors = [];
-    //     $passes = 0;
-    //     $max = 10;
-
-    //     // eliminar hojas primero y evitar padres con hijos existentes
-    //     while ($toDelete->isNotEmpty() && $passes < $max) {
-    //         $passes++;
-    //         $set = $toDelete->flip();
-
-    //         $leafIds = $toDelete->filter(function ($id) use ($childrenByParent, $set) {
-    //             $children = $childrenByParent->get($id, collect());
-    //             foreach ($children as $ch) {
-    //                 if (!isset($set[$ch['id']]))
-    //                     return false;
-    //             }
-    //             return true;
-    //         })->values();
-
-    //         if ($leafIds->isEmpty())
-    //             break;
-
-    //         foreach ($leafIds as $id) {
-    //             $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //                 ->timeout(60)
-    //                 ->delete("{$credWoo->base_url}/products/categories/{$id}", ['force' => true]);
-
-    //             if ($res->successful()) {
-    //                 $deletedWoo[] = $id;
-
-    //                 // 🔻 Borrar también en BD local
-    //                 $affected = CategoriaSincronizada::where('cliente', $clienteNombre)
-    //                     ->where('woocommerce_id', $id)
-    //                     ->delete();
-
-    //                 if ($affected > 0) {
-    //                     $deletedDb[] = $id;
-    //                 }
-    //             } else {
-    //                 $errors[] = ['id' => $id, 'http' => $res->status(), 'body' => $res->body()];
-    //             }
-
-    //             $toDelete = $toDelete->reject(fn($x) => $x === $id)->values();
-    //         }
-    //     }
-
-    //     return response()->json([
-    //         'mensaje' => 'Eliminación masiva de categorías con count==0 finalizada',
-    //         'eliminadas_woo' => $deletedWoo,
-    //         'eliminadas_db' => $deletedDb,
-    //         'errores' => $errors,
-    //         'intentadas' => count($deletedWoo) + count($errors),
-    //     ]);
-    // }
 
     public function deleteAllZeroCountCategories(string $clienteNombre)
     {
@@ -2291,66 +951,6 @@ class ApiTestController extends Controller
             'intentadas' => count($deletedDb) + count($errors),
         ]);
     }
-
-
-    // public function deleteOneZeroCountCategory(string $clienteNombre, int $id)
-    // {
-    //     $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-    //     if (!$credWoo)
-    //         return response()->json(['error' => 'Credenciales Woo no encontradas'], 404);
-
-    //     // traer la categoría
-    //     $res = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //         ->timeout(30)
-    //         ->get("{$credWoo->base_url}/products/categories/{$id}");
-    //     if ($res->failed())
-    //         return response()->json(['error' => 'No se pudo leer categoría', 'detalle' => $res->body()], 500);
-
-    //     $cat = $res->json();
-    //     if ((int) ($cat['count'] ?? 0) !== 0) {
-    //         return response()->json(['error' => 'La categoría tiene productos asociados (count > 0).'], 422);
-    //     }
-
-    //     // comprobar hijos
-    //     $hasChildren = false;
-    //     $page = 1;
-    //     do {
-    //         $lr = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //             ->timeout(30)
-    //             ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page, 'parent' => $id]);
-    //         if ($lr->failed())
-    //             break;
-    //         $batch = collect($lr->json());
-    //         if ($batch->isNotEmpty()) {
-    //             $hasChildren = true;
-    //             break;
-    //         }
-    //         $page++;
-    //     } while ($batch->count() > 0);
-
-    //     if ($hasChildren) {
-    //         return response()->json(['error' => 'La categoría tiene subcategorías; elimínalas primero.'], 422);
-    //     }
-
-    //     $del = Http::withBasicAuth($credWoo->user, $credWoo->password)
-    //         ->timeout(30)
-    //         ->delete("{$credWoo->base_url}/products/categories/{$id}", ['force' => true]);
-
-    //     if ($del->failed()) {
-    //         return response()->json(['error' => 'No se pudo eliminar', 'detalle' => $del->body()], 500);
-    //     }
-
-    //     // 🔻 Borrar también en BD local
-    //     $affected = CategoriaSincronizada::where('cliente', $clienteNombre)
-    //         ->where('woocommerce_id', $id)
-    //         ->delete();
-
-    //     return response()->json([
-    //         'mensaje' => 'Categoría eliminada',
-    //         'id' => $id,
-    //         'db_rows_deleted' => $affected, // cuántas filas locales se eliminaron
-    //     ]);
-    // }
 
 
 
@@ -2450,189 +1050,96 @@ class ApiTestController extends Controller
         return ApiConnector::getCredentials($cliente, 'woocommerce');
     }
 
-    // public function deleteOne(string $cliente, int $wooId)
-    // {
-    //     $cred = $this->credWoo($cliente);
-    //     if (!$cred)
-    //         return response()->json(['ok' => false, 'msg' => 'Sin credenciales Woo'], 404);
 
-    //     // 1) Leer categoría en Woo (validar o detectar "no existe")
-    //     $cat = Http::withBasicAuth($cred->user, $cred->password)
-    //         ->timeout(30)
-    //         ->get("{$cred->base_url}/products/categories/{$wooId}");
+    public function deleteOne(string $cliente, int $wooId)
+    {
+        $cred = $this->credWoo($cliente);
+        if (!$cred) {
+            return response()->json(['ok' => false, 'msg' => 'Sin credenciales Woo'], 404);
+        }
 
-    //     if ($cat->status() === 404) {
-    //         // Woo dice que no existe: la tratamos como "ya borrada" y limpiamos local
-    //         $local = $this->deleteLocalByWooId($cliente, $wooId, true);
+        // 1) BD primero
+        $dbDeleted = $this->deleteLocalByWooId($cliente, $wooId);
+        if ($dbDeleted === 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'No se pudo eliminar en BD local. Operación abortada.',
+                'id' => $wooId
+            ], 422);
+        }
 
-    //         Log::info('catsync.deleteOne.woo_not_found_on_get', [
-    //             'cliente' => $cliente,
-    //             'woo_id' => $wooId,
-    //             'db_rows_deleted' => $local['deleted'],
-    //             'db_ids' => $local['ids'],
-    //         ]);
+        // 2) Leer en Woo
+        $cat = Http::withBasicAuth($cred->user, $cred->password)
+            ->timeout(30)
+            ->get("{$cred->base_url}/products/categories/{$wooId}");
 
-    //         return response()->json([
-    //             'ok' => true,
-    //             'id' => $wooId,
-    //             'woo' => ['status' => 'not_found', 'stage' => 'get'],
-    //             'db_rows_deleted' => $local['deleted'],
-    //             'db_method' => $local['method'],
-    //             'db_ids_deleted' => $local['ids'],
-    //         ]);
-    //     }
+        if ($cat->status() === 404) {
+            return response()->json([
+                'ok' => true,
+                'id' => $wooId,
+                'woo' => ['status' => 'not_found', 'stage' => 'get'],
+                'db_rows_deleted' => $dbDeleted,
+            ]);
+        }
+        if ($cat->failed()) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'No se pudo leer categoría en Woo tras borrar en BD.',
+                'det' => $cat->body(),
+                'db_rows_deleted' => $dbDeleted
+            ], 500);
+        }
 
-    //     if ($cat->failed()) {
-    //         // Otro error real de Woo
-    //         return response()->json(['ok' => false, 'msg' => 'No se pudo leer categoría', 'det' => $cat->body()], 500);
-    //     }
+        $catJ = $cat->json();
+        if ((int) ($catJ['count'] ?? 0) !== 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'La categoría tiene productos (count>0). No se elimina en Woo.',
+                'db_rows_deleted' => $dbDeleted
+            ], 422);
+        }
 
-    //     $catJ = $cat->json();
-    //     if ((int) ($catJ['count'] ?? 0) !== 0) {
-    //         return response()->json(['ok' => false, 'msg' => 'La categoría tiene productos (count>0)'], 422);
-    //     }
+        // hijos
+        $hijos = Http::withBasicAuth($cred->user, $cred->password)
+            ->timeout(30)
+            ->get("{$cred->base_url}/products/categories", ['per_page' => 1, 'parent' => $wooId]);
+        if ($hijos->successful() && collect($hijos->json())->isNotEmpty()) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'Tiene subcategorías. Elimínalas primero.',
+                'db_rows_deleted' => $dbDeleted
+            ], 422);
+        }
 
-    //     // 2) Verificar que no tenga hijos
-    //     $hijos = Http::withBasicAuth($cred->user, $cred->password)
-    //         ->timeout(30)
-    //         ->get("{$cred->base_url}/products/categories", ['per_page' => 1, 'parent' => $wooId]);
-    //     if ($hijos->successful() && collect($hijos->json())->isNotEmpty()) {
-    //         return response()->json(['ok' => false, 'msg' => 'Tiene subcategorías. Elimínalas primero.'], 422);
-    //     }
+        // 3) Eliminar en Woo
+        $del = Http::withBasicAuth($cred->user, $cred->password)
+            ->timeout(30)
+            ->delete("{$cred->base_url}/products/categories/{$wooId}", ['force' => true]);
 
-    //     // 3) Intentar eliminar en Woo
-    //     $del = Http::withBasicAuth($cred->user, $cred->password)
-    //         ->timeout(30)
-    //         ->delete("{$cred->base_url}/products/categories/{$wooId}", ['force' => true]);
+        if ($del->status() === 404) {
+            return response()->json([
+                'ok' => true,
+                'id' => $wooId,
+                'woo' => ['status' => 'not_found', 'stage' => 'delete'],
+                'db_rows_deleted' => $dbDeleted
+            ]);
+        }
+        if ($del->failed()) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'Woo error al eliminar (BD ya eliminada).',
+                'det' => $del->body(),
+                'db_rows_deleted' => $dbDeleted
+            ], 500);
+        }
 
-    //     if ($del->status() === 404) {
-    //         // Ya no existe al momento del delete: seguimos como OK y limpiamos local
-    //         $local = $this->deleteLocalByWooId($cliente, $wooId, true);
-
-    //         Log::info('catsync.deleteOne.woo_not_found_on_delete', [
-    //             'cliente' => $cliente,
-    //             'woo_id' => $wooId,
-    //             'db_rows_deleted' => $local['deleted'],
-    //             'db_ids' => $local['ids'],
-    //         ]);
-
-    //         return response()->json([
-    //             'ok' => true,
-    //             'id' => $wooId,
-    //             'woo' => ['status' => 'not_found', 'stage' => 'delete'],
-    //             'db_rows_deleted' => $local['deleted'],
-    //             'db_method' => $local['method'],
-    //             'db_ids_deleted' => $local['ids'],
-    //         ]);
-    //     }
-
-    //     if ($del->failed()) {
-    //         return response()->json(['ok' => false, 'msg' => 'Woo error', 'det' => $del->body()], 500);
-    //     }
-
-    //     // 4) Borrar en BD local por woo_id (y productos_woo=0)
-    //     $local = $this->deleteLocalByWooId($cliente, $wooId, true);
-
-    //     return response()->json([
-    //         'ok' => true,
-    //         'id' => $wooId,
-    //         'woo' => ['status' => 'deleted'],
-    //         'db_rows_deleted' => $local['deleted'],
-    //         'db_method' => $local['method'],
-    //         'db_ids_deleted' => $local['ids'],
-    //     ]);
-    // }
-
-
-public function deleteOne(string $cliente, int $wooId)
-{
-    $cred = $this->credWoo($cliente);
-    if (!$cred) {
-        return response()->json(['ok' => false, 'msg' => 'Sin credenciales Woo'], 404);
-    }
-
-    // 1) BD primero
-    $dbDeleted = $this->deleteLocalByWooId($cliente, $wooId);
-    if ($dbDeleted === 0) {
-        return response()->json([
-            'ok' => false,
-            'msg' => 'No se pudo eliminar en BD local. Operación abortada.',
-            'id' => $wooId
-        ], 422);
-    }
-
-    // 2) Leer en Woo
-    $cat = Http::withBasicAuth($cred->user, $cred->password)
-        ->timeout(30)
-        ->get("{$cred->base_url}/products/categories/{$wooId}");
-
-    if ($cat->status() === 404) {
         return response()->json([
             'ok' => true,
             'id' => $wooId,
-            'woo' => ['status' => 'not_found', 'stage' => 'get'],
-            'db_rows_deleted' => $dbDeleted,
-        ]);
-    }
-    if ($cat->failed()) {
-        return response()->json([
-            'ok' => false,
-            'msg' => 'No se pudo leer categoría en Woo tras borrar en BD.',
-            'det' => $cat->body(),
-            'db_rows_deleted' => $dbDeleted
-        ], 500);
-    }
-
-    $catJ = $cat->json();
-    if ((int)($catJ['count'] ?? 0) !== 0) {
-        return response()->json([
-            'ok' => false,
-            'msg' => 'La categoría tiene productos (count>0). No se elimina en Woo.',
-            'db_rows_deleted' => $dbDeleted
-        ], 422);
-    }
-
-    // hijos
-    $hijos = Http::withBasicAuth($cred->user, $cred->password)
-        ->timeout(30)
-        ->get("{$cred->base_url}/products/categories", ['per_page' => 1, 'parent' => $wooId]);
-    if ($hijos->successful() && collect($hijos->json())->isNotEmpty()) {
-        return response()->json([
-            'ok' => false,
-            'msg' => 'Tiene subcategorías. Elimínalas primero.',
-            'db_rows_deleted' => $dbDeleted
-        ], 422);
-    }
-
-    // 3) Eliminar en Woo
-    $del = Http::withBasicAuth($cred->user, $cred->password)
-        ->timeout(30)
-        ->delete("{$cred->base_url}/products/categories/{$wooId}", ['force' => true]);
-
-    if ($del->status() === 404) {
-        return response()->json([
-            'ok' => true,
-            'id' => $wooId,
-            'woo' => ['status' => 'not_found', 'stage' => 'delete'],
+            'woo' => ['status' => 'deleted'],
             'db_rows_deleted' => $dbDeleted
         ]);
     }
-    if ($del->failed()) {
-        return response()->json([
-            'ok' => false,
-            'msg' => 'Woo error al eliminar (BD ya eliminada).',
-            'det' => $del->body(),
-            'db_rows_deleted' => $dbDeleted
-        ], 500);
-    }
-
-    return response()->json([
-        'ok' => true,
-        'id' => $wooId,
-        'woo' => ['status' => 'deleted'],
-        'db_rows_deleted' => $dbDeleted
-    ]);
-}
 
 
 
@@ -2854,6 +1361,9 @@ public function deleteOne(string $cliente, int $wooId)
         }
         return $imagenes;
     }
+
+
+
 
     public function sincronizarProductosConCategorias(string $clienteNombre)
     {
@@ -3405,6 +1915,9 @@ public function deleteOne(string $cliente, int $wooId)
     }
 
 
+
+
+
     public function deleteAllWooProductsAndCategories(string $clienteNombre)
     {
         $cred = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
@@ -3610,15 +2123,6 @@ public function deleteOne(string $cliente, int $wooId)
             'detalles_categorias' => $eliminadosCategorias,
         ]);
     }
-
-
-
-
-
-
-
-
-
 
     public function verificarPermisosWooImages(string $clienteNombre)
     {

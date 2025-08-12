@@ -329,5 +329,62 @@ class CategoriaSincronizadaController extends Controller
     }
 
 
+// --- helper: token por cliente, leyendo de BD ---
+private function getSyncToken(string $cliente): ?string
+{
+    // 1) priorizamos Sirett (o el que uses para validar el middleware)
+    $credSirett = ApiConnector::getCredentials($cliente, 'sirett');
+    if ($credSirett && !empty($credSirett->api_token)) {
+        return $credSirett->api_token;
+    }
+
+    // 2) fallback a Woo si también guarda token
+    $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
+    if ($credWoo && !empty($credWoo->api_token)) {
+        return $credWoo->api_token;
+    }
+
+    // 3) último recurso (por si lo mantienes para pruebas)
+    return config('services.sync.token') ?? env('SYNC_API_TOKEN');
+}
+
+// --- acción que dispara la sync desde la UI ---
+public function syncNow(string $cliente, Request $request)
+{
+    $token = $this->getSyncToken($cliente);
+    if (!$token) {
+        return response()->json(['ok' => false, 'msg' => 'No hay api_token para este cliente'], 403);
+    }
+
+    // mismo endpoint que usas en Postman:
+    $apiUrl = url("/api/{$cliente}/woocommerce/categories/sync-from-sirett");
+
+    Log::info('catsync.syncNow.call', ['cliente' => $cliente, 'apiUrl' => $apiUrl]);
+
+    $res = Http::withToken($token)
+        ->timeout(600)               // ajústalo según dure tu sync
+        ->post($apiUrl, []);         // body vacío si tu API no requiere más
+
+    if ($res->failed()) {
+        return response()->json([
+            'ok'     => false,
+            'msg'    => 'Error al ejecutar la sincronización',
+            'status' => $res->status(),
+            'det'    => $res->body(),
+        ], 500);
+    }
+
+    return response()->json([
+        'ok'  => true,
+        'api' => $res->json(),        // devolvemos el resumen de tu API
+    ]);
+}
+
+
+
+
+
+
+
 
 }

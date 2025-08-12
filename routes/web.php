@@ -16,7 +16,7 @@ Route::get('/', function () {
 Route::get('/logs', [ExportLogController::class, 'index'])->name('logs.index');
 Route::get('/logs/export', [ExportLogController::class, 'export'])->name('logs.export');
 
-Route::get('/admin/categorias-sincronizadas/{cliente}', [CategoriaSincronizadaController::class, 'index'])->name('categorias.sincronizadas'); 
+Route::get('/admin/categorias-sincronizadas/{cliente}', [CategoriaSincronizadaController::class, 'index'])->name('categorias.sincronizadas');
 
 
 Route::get('/historial-sincronizaciones', [SyncHistoryController::class, 'index'])->name('sync-history.index');
@@ -42,3 +42,13 @@ Route::post('/admin/categorias-sincronizadas/{cliente}/eliminar-todas-huerfanas'
 
 Route::delete('/admin/categorias-sincronizadas/{cliente}/{wooId}', [CategoriaSincronizadaController::class, 'deleteOne'])
     ->name('catsync.deleteOne');
+
+
+
+
+Route::post('/admin/categorias-sincronizadas/{cliente}/sincronizar',
+    [CategoriaSincronizadaController::class, 'syncNow']
+)->name('catsync.syncNow');
+
+
+
