@@ -27,6 +27,6 @@ Route::get('/sync-errors/export/excel', [SyncErrorController::class, 'exportExce
 Route::delete('/sync-errors/delete-all', [SyncErrorController::class, 'deleteAll'])->name('sync-errors.delete-all');
 Route::get('/sync/{sync}/stock-cero', [SyncHistoryController::class, 'descargarStockCero'])->name('sync.stock_cero');
 
-Route::get('/historial-sincronizaciones/{sync}/stock-cero.csv', [SyncHistoryController::class, 'descargarStockCero'])->name('sync.stock_cero');
+
 
 

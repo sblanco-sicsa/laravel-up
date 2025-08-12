@@ -2,9 +2,34 @@
 
 @section('content')
 <div class="container">
-    <h4 class="mb-4 text-center fw-semibold">
+    <h4 class="mb-3 text-center fw-semibold">
         <i class="bi bi-clock-history"></i> Historial de Sincronizaciones
     </h4>
+
+    {{-- Filtros por fecha --}}
+    <form method="GET" action="{{ route('sync-history.index') }}" class="row g-2 align-items-end mb-3">
+        <div class="col-12 col-md-3">
+            <label for="desde" class="form-label mb-1">Fecha inicio</label>
+            <input type="date" id="desde" name="desde" class="form-control form-control-sm"
+                   value="{{ old('desde', request('desde', $desde ?? '')) }}">
+        </div>
+        <div class="col-12 col-md-3">
+            <label for="hasta" class="form-label mb-1">Fecha fin</label>
+            <input type="date" id="hasta" name="hasta" class="form-control form-control-sm"
+                   value="{{ old('hasta', request('hasta', $hasta ?? '')) }}">
+        </div>
+        <div class="col-12 col-md-6 d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm mt-3 mt-md-0">
+                <i class="bi bi-funnel"></i> Filtrar
+            </button>
+            <a href="{{ route('sync-history.index') }}" class="btn btn-outline-secondary btn-sm mt-3 mt-md-0">
+                <i class="bi bi-trash"></i> Limpiar
+            </a>
+            <a href="{{ route('sync-history.index') }}" class="btn btn-success btn-sm mt-3 mt-md-0">
+                <i class="bi bi-arrow-clockwise"></i> Refrescar
+            </a>
+        </div>
+    </form>
 
     <div class="table-responsive">
         <table class="table table-bordered table-hover table-sm align-middle text-center small">
@@ -26,8 +51,41 @@
                     <tr>
                         <td>{{ $sync->id }}</td>
                         <td>{{ $sync->cliente }}</td>
-                        <td>{{ \Carbon\Carbon::parse($sync->started_at)->format('d/m/Y H:i:s') }}</td>
-                        <td>{{ \Carbon\Carbon::parse($sync->finished_at)->format('d/m/Y H:i:s') }}</td>
+
+                        {{-- Hora inicio en formato 12h con ícono --}}
+                        <td>
+                            @if($sync->started_at)
+                                @php 
+                                    $dt = \Carbon\Carbon::parse($sync->started_at);
+                                    $ampm = $dt->format('A');
+                                    $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
+                                @endphp
+                                <span title="{{ $dt->format('d/m/Y h:i:s A') }}">
+                                    {{ $dt->format('h:i:s A') }}
+                                    <i class="bi {{ $icono }}"></i>
+                                </span>
+                            @else
+                                —
+                            @endif
+                        </td>
+
+                        {{-- Hora fin en formato 12h con ícono --}}
+                        <td>
+                            @if($sync->finished_at)
+                                @php 
+                                    $df = \Carbon\Carbon::parse($sync->finished_at);
+                                    $ampm = $df->format('A');
+                                    $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
+                                @endphp
+                                <span title="{{ $df->format('d/m/Y h:i:s A') }}">
+                                    {{ $df->format('h:i:s A') }}
+                                    <i class="bi {{ $icono }}"></i>
+                                </span>
+                            @else
+                                —
+                            @endif
+                        </td>
+
                         <td class="text-success fw-bold">{{ $sync->total_creados }}</td>
                         <td class="text-primary fw-bold">{{ $sync->total_actualizados }}</td>
                         <td class="text-muted">{{ $sync->total_omitidos }}</td>
@@ -59,7 +117,7 @@
     </div>
 
     <div class="d-flex justify-content-center mt-4">
-        {{ $sincronizaciones->links() }}
+        {{ $sincronizaciones->withQueryString()->links() }}
     </div>
 </div>
 
@@ -168,7 +226,7 @@
                             </small>
 
                             <div class="d-flex gap-2">
-                                {{-- Descargar Excel --}}
+                                {{-- Descargar Excel/CSV --}}
                                 <a href="{{ route('sync.stock_cero', $sync->id) }}"
                                    class="btn btn-success btn-sm {{ !$sync->has_stock_cero_csv ? 'disabled' : '' }}"
                                    @if(!$sync->has_stock_cero_csv) aria-disabled="true" tabindex="-1" @endif>
@@ -210,3 +268,31 @@
 @endforeach
 @endsection
 
+@push('scripts')
+<script>
+// Utilidad: copiar por id de textarea/elemento
+function copyToClipboard(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    // Si es textarea, usamos su value; si no, su textContent
+    const text = (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') ? el.value : el.textContent;
+
+    navigator.clipboard.writeText(text)
+        .then(() => {
+            // Opcional: pequeño feedback
+            // alert('Copiado al portapapeles');
+            console.log('Copiado al portapapeles');
+        })
+        .catch(() => {
+            // Fallback (seleccionar y copiar)
+            const temp = document.createElement('textarea');
+            temp.value = text;
+            document.body.appendChild(temp);
+            temp.select();
+            try { document.execCommand('copy'); } catch(e) {}
+            document.body.removeChild(temp);
+        });
+}
+</script>
+@endpush
