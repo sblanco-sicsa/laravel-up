@@ -1162,10 +1162,10 @@ class ApiTestController extends Controller
         return preg_replace('/\s+/', ' ', $n);
     }
 
-    private function categoryKey(string $name): string
-    {
-        return $this->catKey($name);
-    }
+    // private function categoryKey(string $name): string
+    // {
+    //     return $this->catKey($name);
+    // }
 
     private function categoryDisplay(string $name): string
     {
@@ -1917,6 +1917,582 @@ class ApiTestController extends Controller
 
 
 
+    // public function sincronizarProductosConCategorias(string $clienteNombre)
+    // {
+    //     // === Comportamiento para productos Woo sin SKU ===
+    //     $WOO_NO_SKU_ACTION = 'none';                  // 'move' | 'delete' | 'none'
+    //     $WOO_NO_SKU_CATEGORY = 'Pendiente de revisión'; // usada si action = move
+
+    //     try {
+    //         $inicio = now('America/Managua');
+
+    //         $sync = SyncHistory::create([
+    //             'cliente' => $clienteNombre,
+    //             'started_at' => $inicio,
+    //         ]);
+
+    //         $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
+    //         $credSirett = ApiConnector::getCredentials($clienteNombre, 'sirett');
+
+    //         if (!$credWoo || !$credSirett) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'Credenciales no encontradas para WooCommerce o SiReTT.');
+    //             return response()->json(['error' => 'Credenciales no encontradas'], 404);
+    //         }
+
+    //         // 1) SiReTT
+    //         try {
+    //             $client = new \SoapClient($credSirett->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
+    //             $params = ['ws_pid' => $credSirett->user, 'ws_passwd' => $credSirett->password, 'bid' => $credSirett->extra];
+    //             $response = $client->__soapCall('wsp_request_items', $params);
+    //             $productosSirett = json_decode(json_encode($response), true)['data'] ?? [];
+    //         } catch (\Exception $e) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'Error al conectar con SiReTT: ' . $e->getMessage());
+    //             return response()->json(['error' => 'Error al conectar con SiReTT', 'detalle' => $e->getMessage()], 500);
+    //         }
+
+    //         if (empty($productosSirett)) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'No se obtuvieron productos desde SiReTT.');
+    //             return response()->json(['error' => 'No se obtuvieron productos desde SiReTT'], 500);
+    //         }
+
+    //         file_put_contents(
+    //             storage_path("logs/productos_sirett_{$clienteNombre}.json"),
+    //             json_encode($productosSirett, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    //         );
+    //         Log::info("✅ Total productos recibidos desde SiReTT: " . count($productosSirett));
+
+    //         // 2) Woo productos
+    //         $productosWoo = collect();
+    //         $page = 1;
+    //         do {
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->get("{$credWoo->base_url}/products", ['per_page' => 100, 'page' => $page]);
+
+    //             if ($res->failed())
+    //                 break;
+
+    //             $batch = collect($res->json());
+    //             $productosWoo = $productosWoo->merge($batch);
+    //             $page++;
+    //         } while ($batch->count() > 0);
+
+    //         // Evitar colisiones por SKU vacío
+    //         $wooPorSku = $productosWoo
+    //             ->filter(fn($p) => isset($p['sku']) && is_string($p['sku']) && trim($p['sku']) !== '')
+    //             ->keyBy(fn($p) => trim($p['sku']));
+
+    //         // 3) familias únicas SiReTT (referencia)
+    //         $familiasSiReTT = collect($productosSirett)
+    //             ->pluck('familia')->filter()->unique()
+    //             ->map(fn($f) => $this->categoryKey($f))
+    //             ->values();
+
+    //         // 4) Woo categorías (traer todas)
+    //         $categoriasWoo = collect();
+    //         $page = 1;
+    //         do {
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page]);
+
+    //             if ($res->failed())
+    //                 break;
+
+    //             $batch = collect($res->json());
+    //             $categoriasWoo = $categoriasWoo->merge($batch);
+    //             $page++;
+    //         } while ($batch->count() > 0);
+
+    //         // Índices para comparación y colisiones
+    //         $categoriasMap = []; // key normalizado => id
+    //         $slugExistentes = []; // slug => id
+    //         foreach ($categoriasWoo as $cat) {
+    //             $id = $cat['id'];
+    //             $name = $cat['name'] ?? '';
+    //             $slug = $cat['slug'] ?? '';
+    //             $key = $this->categoryKey($name);
+    //             $categoriasMap[$key] = $id;
+    //             $slugExistentes[$slug] = $id;
+    //         }
+
+    //         // (Opcional) Renombrar categorías en Woo (si lo mantienes)
+    //         foreach ($categoriasWoo as $cat) {
+    //             $id = $cat['id'];
+    //             $name = $cat['name'] ?? '';
+    //             $slug = $cat['slug'] ?? '';
+
+    //             $nameDeseado = $this->categoryDisplay($name); // “Oración”
+    //             $slugDeseado = $this->categorySlug($name);    // minúsculas
+
+    //             $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
+    //             if (!$needsRename)
+    //                 continue;
+
+    //             // Evitar colisiones de slug
+    //             $slugFinal = $slugDeseado;
+    //             if (isset($slugExistentes[$slugDeseado]) && $slugExistentes[$slugDeseado] !== $id) {
+    //                 $slugFinal = $slugDeseado . '-' . $id;
+    //             }
+
+    //             $payload = ['name' => $nameDeseado, 'slug' => $slugFinal];
+
+    //             $up = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->put("{$credWoo->base_url}/products/categories/{$id}", $payload);
+
+    //             if ($up->successful()) {
+    //                 unset($slugExistentes[$slug]);
+    //                 $slugExistentes[$slugFinal] = $id;
+
+    //                 $oldKey = $this->categoryKey($name);
+    //                 if (isset($categoriasMap[$oldKey]) && $categoriasMap[$oldKey] === $id) {
+    //                     unset($categoriasMap[$oldKey]);
+    //                 }
+    //                 $categoriasMap[$this->categoryKey($nameDeseado)] = $id;
+
+    //                 Log::info("✏️ Categoría #{$id} => name='{$nameDeseado}', slug='{$slugFinal}'");
+    //             } else {
+    //                 Log::warning("❌ No se pudo renombrar categoría #{$id}: " . $up->body());
+    //             }
+    //         }
+
+    //         // --------------- LOOP PRINCIPAL ---------------
+    //         $creados = [];
+    //         $omitidos = [];
+    //         $actualizados = [];
+    //         $categoriasFallidas = [];
+    //         $fallidosPorCategoria = [];
+    //         $productosParaCrear = [];
+
+    //         foreach ($productosSirett as $producto) {
+    //             $sku = trim($producto['codigo'] ?? '');
+    //             if ($sku === '')
+    //                 continue;
+
+    //             $wooProducto = $wooPorSku[$sku] ?? null;
+
+    //             $nombreCategoriaOriginal = trim($producto['familia'] ?? '');
+    //             if ($nombreCategoriaOriginal === '') {
+    //                 Log::warning("❌ Producto con SKU $sku no tiene familia. Se omite.");
+    //                 SyncError::create([
+    //                     'sync_history_id' => $sync->id,
+    //                     'sku' => $sku,
+    //                     'tipo_error' => 'familia_vacia',
+    //                     'detalle' => json_encode($producto, JSON_UNESCAPED_UNICODE),
+    //                 ]);
+    //                 $categoriasFallidas[] = '(sin familia)';
+    //                 $fallidosPorCategoria[] = $sku;
+    //                 continue;
+    //             }
+
+    //             // Normalización de categoría para mapa y display
+    //             $keyDeseado = $this->categoryKey($nombreCategoriaOriginal);
+    //             $nameVisible = $this->categoryDisplay($nombreCategoriaOriginal);
+
+    //             $categoriaId = $categoriasMap[$keyDeseado] ?? null;
+    //             if (!$categoriaId) {
+    //                 // Crear categoría si falta
+    //                 $slugDeseado = $this->categorySlug($nombreCategoriaOriginal);
+    //                 $slugFinal = $slugDeseado;
+    //                 if (isset($slugExistentes[$slugDeseado])) {
+    //                     $slugFinal = $slugDeseado . '-' . uniqid();
+    //                 }
+
+    //                 $resCategoria = Http::retry(3, 2000)
+    //                     ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                     ->timeout(120)
+    //                     ->post("{$credWoo->base_url}/products/categories", [
+    //                         'name' => $nameVisible,
+    //                         'slug' => $slugFinal,
+    //                     ]);
+
+    //                 if ($resCategoria->successful()) {
+    //                     $categoriaId = $resCategoria->json('id');
+    //                     $categoriasMap[$keyDeseado] = $categoriaId;
+    //                     $slugExistentes[$slugFinal] = $categoriaId;
+    //                 } else {
+    //                     Log::warning("❌ No se pudo crear categoría: $nombreCategoriaOriginal");
+    //                     $categoriasFallidas[] = $nombreCategoriaOriginal;
+    //                     $fallidosPorCategoria[] = $sku;
+    //                     continue;
+    //                 }
+    //             }
+
+    //             // ====== EXISTE EN WOO: comparar usando NORMALIZACIÓN ======
+    //             if ($wooProducto) {
+    //                 $nombre = trim($producto['descripcion'] ?? '');
+    //                 $precioNew = number_format((float) ($producto['precio'] ?? 0), 2, '.', '');
+    //                 $precioOldN = number_format((float) ($wooProducto['regular_price'] ?? 0), 2, '.', '');
+    //                 $stockNew = (int) ($producto['stock'] ?? 0);
+    //                 $stockOld = (int) ($wooProducto['stock_quantity'] ?? 0);
+
+    //                 $nameOld = $wooProducto['name'] ?? '';
+    //                 $nameNew = $nombre;
+
+    //                 // Categoría actual del producto en Woo
+    //                 $catOldId = isset($wooProducto['categories'][0]['id']) ? (int) $wooProducto['categories'][0]['id'] : null;
+    //                 $catOldName = $wooProducto['categories'][0]['name'] ?? '';
+    //                 $catNewName = $nombreCategoriaOriginal;
+
+    //                 // ¿La categoría del producto cambia?
+    //                 $catChanged = false;
+    //                 if (!is_null($catOldId)) {
+    //                     $catChanged = ($catOldId !== (int) $categoriaId); // por ID
+    //                 } else {
+    //                     // respaldo por nombre normalizado
+    //                     $catChanged = ($this->categoryKey($catOldName) !== $this->categoryKey($catNewName));
+    //                 }
+
+    //                 // Comparaciones de texto sin acentos y minúsculas
+    //                 $nameChanged = ($this->normalizeText($nameOld) !== $this->normalizeText($nameNew));
+    //                 $priceChanged = ($precioOldN !== $precioNew);
+    //                 $stockChanged = ($stockOld !== $stockNew);
+
+    //                 // Construir payload SOLO con cambios reales
+    //                 $payload = [];
+    //                 if ($nameChanged) {
+    //                     $payload['name'] = $nameNew;
+    //                 }
+    //                 if ($priceChanged) {
+    //                     $payload['regular_price'] = $precioNew;
+    //                 }
+    //                 if ($stockChanged) {
+    //                     $payload['stock_quantity'] = $stockNew;
+    //                     $payload['manage_stock'] = true;
+    //                 }
+    //                 if ($catChanged) {
+    //                     $payload['categories'] = [['id' => $categoriaId]];
+    //                 }
+
+    //                 if (!empty($payload)) {
+    //                     $resUpdate = Http::retry(3, 2000)
+    //                         ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                         ->timeout(120)
+    //                         ->put("{$credWoo->base_url}/products/{$wooProducto['id']}", $payload);
+
+    //                     if ($resUpdate->successful()) {
+    //                         $actualizados[] = $sku;
+
+    //                         // Reporte de diffs (opcional, si tienes estas helpers)
+    //                         $rName = $this->fieldDiffReport('name', $nameOld, $nameNew);
+    //                         $rCat = $this->fieldDiffReport('categoria', $catOldName, $catNewName);
+    //                         $rPrecio = [
+    //                             'campo' => 'precio',
+    //                             'igual' => ($precioOldN === $precioNew),
+    //                             'old_raw' => $precioOldN,
+    //                             'new_raw' => $precioNew,
+    //                         ];
+    //                         $rStock = [
+    //                             'campo' => 'stock',
+    //                             'igual' => ($stockOld === $stockNew),
+    //                             'old_raw' => $stockOld,
+    //                             'new_raw' => $stockNew,
+    //                         ];
+
+    //                         SyncHistoryDetail::create([
+    //                             'sync_history_id' => $sync->id,
+    //                             'sku' => $sku,
+    //                             'tipo' => 'actualizado',
+    //                             'datos_anteriores' => [
+    //                                 'name' => $nameOld,
+    //                                 'precio' => $precioOldN,
+    //                                 'stock' => $stockOld,
+    //                                 'categoria' => $catOldName,
+    //                             ],
+    //                             'datos_nuevos' => [
+    //                                 'name' => $nameNew,
+    //                                 'precio' => $precioNew,
+    //                                 'stock' => $stockNew,
+    //                                 'categoria' => $catNewName,
+    //                             ],
+    //                             'deltas' => [
+    //                                 'name' => $rName,
+    //                                 'categoria' => $rCat,
+    //                                 'precio' => $rPrecio,
+    //                                 'stock' => $rStock,
+    //                             ],
+    //                         ]);
+
+    //                         Log::info("🔄 SKU {$sku} actualizado", [
+    //                             'name_changed' => $nameChanged,
+    //                             'price_changed' => $priceChanged,
+    //                             'stock_changed' => $stockChanged,
+    //                             'cat_changed' => $catChanged,
+    //                         ]);
+    //                     } else {
+    //                         $this->notificarErrorTelegram($clienteNombre, "Error actualizando SKU $sku: " . $resUpdate->body());
+    //                         Log::warning("❌ Error actualizando SKU $sku: " . $resUpdate->body());
+    //                     }
+    //                 } else {
+    //                     // Nada cambió en términos reales (ignorando tildes/mayúsculas)
+    //                     $omitidos[] = $sku;
+    //                 }
+
+    //                 continue; // ya procesado este SKU
+    //             }
+
+    //             // ====== NO EXISTE EN WOO: preparar creación ======
+    //             $productosParaCrear[] = [
+    //                 'name' => $producto['descripcion'] ?? '',
+    //                 'sku' => $sku,
+    //                 'regular_price' => number_format((float) ($producto['precio'] ?? 0), 2, '.', ''),
+    //                 'stock_quantity' => (int) ($producto['stock'] ?? 0),
+    //                 'manage_stock' => true,
+    //                 'description' => $producto['caracteristicas'] ?? '',
+    //                 'categories' => [['id' => $categoriaId]],
+    //                 'images' => $this->mapearImagenes($producto),
+    //             ];
+
+    //             $creados[] = $sku;
+    //             SyncHistoryDetail::create([
+    //                 'sync_history_id' => $sync->id,
+    //                 'sku' => $sku,
+    //                 'tipo' => 'creado',
+    //                 'datos_nuevos' => [
+    //                     'name' => $producto['descripcion'] ?? '',
+    //                     'sku' => $sku,
+    //                     'precio' => $producto['precio'] ?? 0,
+    //                     'stock' => $producto['stock'] ?? 0,
+    //                     'categoria' => $nombreCategoriaOriginal,
+    //                 ],
+    //             ]);
+    //         }
+
+    //         // Lotes de creación
+    //         $resultados = [];
+    //         foreach (array_chunk($productosParaCrear, 50) as $lote) {
+    //             Log::info("⏳ Enviando lote con " . count($lote) . " productos a WooCommerce");
+
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->post("{$credWoo->base_url}/products/batch", ['create' => $lote]);
+
+    //             if ($res->successful()) {
+    //                 $resultados[] = ['status' => '✅ Lote creado', 'response' => $res->json()];
+    //             } else {
+    //                 $resultados[] = ['status' => '❌ Error al crear lote', 'response' => $res->body()];
+    //                 $this->notificarErrorTelegram($clienteNombre, 'Error creando lote en WooCommerce: ' . $res->body());
+    //                 Log::warning("❌ Error al crear lote: " . $res->body());
+    //             }
+    //         }
+
+    //         // --- Métricas extra para el cruce de SKUs
+    //         $skusSirett = collect($productosSirett)
+    //             ->pluck('codigo')
+    //             ->map(fn($v) => is_string($v) ? trim($v) : (string) $v)
+    //             ->filter(fn($v) => $v !== '')
+    //             ->unique()->values();
+
+    //         // Woo: separa con y sin SKU
+    //         $wooConSku = $productosWoo->filter(function ($p) {
+    //             $s = $p['sku'] ?? '';
+    //             return is_string($s) && trim($s) !== '';
+    //         });
+    //         $wooSinSku = $productosWoo->filter(function ($p) {
+    //             $s = $p['sku'] ?? '';
+    //             return !is_string($s) || trim($s) === '';
+    //         });
+
+    //         $skusWoo = $wooConSku->pluck('sku')
+    //             ->map(fn($v) => trim($v))->unique()->values();
+
+    //         // SKUs que están en Woo pero NO en SiReTT
+    //         $soloWoo = $skusWoo->diff($skusSirett)->values();
+
+    //         // Detalle de “solo en Woo”
+    //         $soloWooDetalle = $wooConSku
+    //             ->filter(fn($p) => $soloWoo->contains(trim($p['sku'])))
+    //             ->map(fn($p) => [
+    //                 'id' => $p['id'] ?? null,
+    //                 'sku' => trim($p['sku']),
+    //                 'name' => $p['name'] ?? null,
+    //                 'status' => $p['status'] ?? null,
+    //             ])->values();
+
+    //         // Guarda archivo de apoyo
+    //         $reporte = [
+    //             'solo_woocommerce' => $soloWoo,
+    //             'woo_sin_sku' => $wooSinSku->map(fn($p) => [
+    //                 'id' => $p['id'] ?? null,
+    //                 'name' => $p['name'] ?? null,
+    //                 'type' => $p['type'] ?? null,
+    //                 'status' => $p['status'] ?? null,
+    //             ])->values(),
+    //         ];
+    //         file_put_contents(
+    //             storage_path("logs/solo_woo_{$clienteNombre}.json"),
+    //             json_encode($reporte, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    //         );
+
+    //         // SKUs con stock = 0 en SiReTT
+    //         $stockCeroSirett = collect($productosSirett)
+    //             ->filter(fn($p) => (int) ($p['stock'] ?? 0) === 0)
+    //             ->pluck('codigo')
+    //             ->filter(fn($v) => is_string($v) && trim($v) !== '')
+    //             ->map(fn($v) => trim($v))
+    //             ->unique()->values();
+
+    //         // Guardar CSV de stock=0 para esta corrida
+    //         $csvLines = "sku\n" . implode("\n", $stockCeroSirett->all());
+    //         $csvPath = "exports/stock_cero_{$sync->id}.csv";
+    //         Storage::disk('local')->put($csvPath, $csvLines);
+
+    //         // --- Gestionar productos Woo sin SKU ---
+    //         $gestionWooSinSku = [
+    //             'accion' => $WOO_NO_SKU_ACTION,
+    //             'procesados' => 0,
+    //             'moved_ids' => [],
+    //             'deleted_ids' => [],
+    //             'errores' => [],
+    //         ];
+
+    //         if ($WOO_NO_SKU_ACTION !== 'none' && $wooSinSku->count() > 0) {
+    //             if ($WOO_NO_SKU_ACTION === 'move') {
+    //                 $catPendId = $this->ensureCategoryExists($credWoo, $WOO_NO_SKU_CATEGORY, $categoriasMap, $slugExistentes);
+    //                 if ($catPendId) {
+    //                     $updates = $wooSinSku->map(function ($p) use ($catPendId) {
+    //                         return ['id' => $p['id'], 'status' => 'draft', 'categories' => [['id' => $catPendId]]];
+    //                     })->values()->all();
+
+    //                     foreach (array_chunk($updates, 50) as $lote) {
+    //                         $up = Http::retry(3, 2000)
+    //                             ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                             ->timeout(120)
+    //                             ->post("{$credWoo->base_url}/products/batch", ['update' => $lote]);
+
+    //                         if ($up->successful()) {
+    //                             $gestionWooSinSku['procesados'] += count($lote);
+    //                             $gestionWooSinSku['moved_ids'] = array_merge(
+    //                                 $gestionWooSinSku['moved_ids'],
+    //                                 array_column($lote, 'id')
+    //                             );
+    //                         } else {
+    //                             $gestionWooSinSku['errores'][] = $up->body();
+    //                             Log::warning("❌ Error al mover Woo sin SKU: " . $up->body());
+    //                         }
+    //                     }
+    //                 } else {
+    //                     $gestionWooSinSku['errores'][] = 'No se pudo crear/obtener categoría especial.';
+    //                 }
+    //             }
+
+    //             if ($WOO_NO_SKU_ACTION === 'delete') {
+    //                 foreach ($wooSinSku as $p) {
+    //                     $pid = $p['id'];
+    //                     $del = Http::retry(2, 1500)
+    //                         ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                         ->timeout(60)
+    //                         ->delete("{$credWoo->base_url}/products/{$pid}", ['force' => true]);
+
+    //                     if ($del->successful()) {
+    //                         $gestionWooSinSku['procesados']++;
+    //                         $gestionWooSinSku['deleted_ids'][] = $pid;
+    //                     } else {
+    //                         $gestionWooSinSku['errores'][] = "ID {$pid}: " . $del->body();
+    //                         Log::warning("❌ Error al eliminar producto #{$pid} sin SKU: " . $del->body());
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         // Tiempos
+    //         $fin = now('America/Managua');
+    //         $duracion = $inicio->diffInSeconds($fin);
+    //         Log::info("⏱️ Tiempo total de sincronización para {$clienteNombre}: {$duracion} segundos");
+
+    //         // Persistir resumen
+    //         $sync->update([
+    //             'finished_at' => $fin,
+    //             'total_creados' => count($creados),
+    //             'total_actualizados' => count($actualizados),
+    //             'total_omitidos' => count($omitidos),
+    //             'total_fallidos_categoria' => count($fallidosPorCategoria),
+    //         ]);
+
+    //         // Telegram
+    //         $resumenTelegram = "📦 <b>Sincronización completada</b> para <b>{$clienteNombre}</b>\n"
+    //             . "🆕 Nuevos: <b>" . count($creados) . "</b>\n"
+    //             . "🔄 Actualizados: <b>" . count($actualizados) . "</b>\n"
+    //             . "⏭️ Omitidos: <b>" . count($omitidos) . "</b>\n"
+    //             . "🛑 Ignorados por categoría: <b>" . count($fallidosPorCategoria) . "</b>\n"
+    //             . "📥 Total productos SiReTT: <b>" . count($productosSirett) . "</b>\n"
+    //             . "🛒 Total productos Woo: <b>" . $productosWoo->count() . "</b>";
+    //         $this->notificarTelegram($clienteNombre, $resumenTelegram);
+
+    //         // Respuesta JSON
+    //         return response()->json([
+    //             'mensaje' => 'Sincronización completa.',
+    //             'total_sirett' => count($productosSirett),
+    //             'total_woocommerce' => $productosWoo->count(),
+    //             'total_creados' => count($creados),
+    //             'total_actualizados' => count($actualizados),
+    //             'total_omitidos' => count($omitidos),
+    //             'total_fallidos_categoria' => count($fallidosPorCategoria),
+    //             'creados' => $creados,
+    //             'actualizados' => $actualizados,
+    //             'omitidos' => $omitidos,
+    //             'fallidos_categoria' => $fallidosPorCategoria,
+    //         ]);
+
+    //     } catch (\Throwable $e) {
+    //         $this->notificarErrorTelegram($clienteNombre, 'Excepción inesperada: ' . $e->getMessage());
+    //         Log::error("❌ Excepción no controlada: " . $e->getMessage());
+    //         return response()->json(['error' => 'Excepción no controlada', 'detalle' => $e->getMessage()], 500);
+    //     }
+    // }
+
+
+
+
+
+
+
+    private function normalizeNoAccents(?string $s): string
+    {
+        $s = is_string($s) ? trim($s) : '';
+        // minúsculas + espacios
+        $s = \Illuminate\Support\Str::of($s)->lower()->squish()->toString();
+
+        // quitar tildes/acentos
+        $noAcc = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
+        if ($noAcc !== false && $noAcc !== null) {
+            $s = $noAcc;
+        } else {
+            // respaldo por si iconv falla en tu hosting
+            $s = strtr($s, [
+                'á' => 'a',
+                'é' => 'e',
+                'í' => 'i',
+                'ó' => 'o',
+                'ú' => 'u',
+                'ü' => 'u',
+                'ñ' => 'n'
+            ]);
+        }
+
+        // normaliza espacios múltiples
+        $s = preg_replace('/\s+/', ' ', $s);
+        return trim($s);
+    }
+
+    private function categoryKey(?string $name): string
+    {
+        return $this->normalizeNoAccents($name);
+    }
+
+    private function normalizeText(?string $text): string
+    {
+        return $this->normalizeNoAccents($text);
+    }
+
+
+
+
 
     public function deleteAllWooProductsAndCategories(string $clienteNombre)
     {
@@ -2339,32 +2915,30 @@ class ApiTestController extends Controller
 
 
     // ---- Helpers de texto ----
-    private function normalizeText(?string $s): string
-    {
-        if ($s === null)
-            return '';
-        // 1) Unificar encoding y entidades HTML
-        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // &amp; -> &
-        $s = strip_tags($s);
+    // private function normalizeText(?string $s): string
+    // {
+    //     if ($s === null)
+    //         return '';
+    //     // 1) Unificar encoding y entidades HTML
+    //     $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // &amp; -> &
+    //     $s = strip_tags($s);
 
-        // 2) Reemplazar espacios raros y colapsar
-        $s = str_replace(["\xC2\xA0", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D"], ' ', $s); // nbsp, ZWSP, etc.
-        $s = preg_replace('/\s+/u', ' ', $s);
+    //     // 2) Reemplazar espacios raros y colapsar
+    //     $s = str_replace(["\xC2\xA0", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D"], ' ', $s); // nbsp, ZWSP, etc.
+    //     $s = preg_replace('/\s+/u', ' ', $s);
 
-        // 3) Recortes
-        $s = trim($s);
+    //     // 3) Recortes
+    //     $s = trim($s);
 
-        // 4) Normalización Unicode (NFC). Si intl no está, se omite en silencio.
-        if (class_exists(\Normalizer::class) && \Normalizer::isNormalized($s, \Normalizer::FORM_C) === false) {
-            $s = \Normalizer::normalize($s, \Normalizer::FORM_C);
-        }
+    //     // 4) Normalización Unicode (NFC). Si intl no está, se omite en silencio.
+    //     if (class_exists(\Normalizer::class) && \Normalizer::isNormalized($s, \Normalizer::FORM_C) === false) {
+    //         $s = \Normalizer::normalize($s, \Normalizer::FORM_C);
+    //     }
 
-        return $s;
-    }
+    //     return $s;
+    // }
 
-    /**
-     * Regresa info del primer char distinto (índice, códigos, contexto)
-     */
+
     private function firstDiff(string $a, string $b): array
     {
         $lenA = mb_strlen($a, 'UTF-8');
@@ -2400,9 +2974,7 @@ class ApiTestController extends Controller
         ];
     }
 
-    /**
-     * Arma un reporte detallado por campo
-     */
+
     private function fieldDiffReport(string $label, string $old, string $new): array
     {
         $normOld = $this->normalizeText($old);
@@ -2435,27 +3007,7 @@ class ApiTestController extends Controller
         return preg_replace('/\s+/', ' ', trim($s));
     }
 
-    // // 🔑 Clave de comparación (siempre minúsculas)
-    // private function categoryKey(?string $name): string
-    // {
-    //     return mb_strtolower($this->normalizeSpaces($name ?? ''), 'UTF-8');
-    // }
 
-    // // 🏷️ Formato visible “Oración”: primera letra mayúscula, resto minúsculas
-    // private function categoryDisplay(?string $name): string
-    // {
-    //     $s = mb_strtolower($this->normalizeSpaces($name ?? ''), 'UTF-8');
-    //     if ($s === '')
-    //         return $s;
-    //     return mb_strtoupper(mb_substr($s, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($s, 1, null, 'UTF-8');
-    // }
-
-    // // 🔗 Slug siempre minúsculas
-    // private function categorySlug(?string $name): string
-    // {
-    //     // Opcional: podrías basarlo en la clave (100% minúsculas)
-    //     return Str::slug($this->categoryKey($name));
-    // }
 
     private function ensureCategoryExists($credWoo, string $nameVisible, array &$categoriasMap, array &$slugExistentes): ?int
     {
