@@ -30,7 +30,7 @@ class SyncHistoryController extends Controller
             $q->whereDate('started_at', '>=', $desde);
         });
         $query->when($hasta, function ($q) use ($hasta) {
-            $q->where('started_at', '<=', \Carbon\Carbon::parse($hasta)->endOfDay());
+            $q->where('started_at', '<=', Carbon::parse($hasta)->endOfDay());
         });
 
         $sincronizaciones = $query
@@ -40,12 +40,12 @@ class SyncHistoryController extends Controller
         // Enriquecer stock=0
         $sincronizaciones->getCollection()->transform(function ($s) {
             $path = "exports/stock_cero_{$s->id}.csv";
-            $s->has_stock_cero_csv = \Illuminate\Support\Facades\Storage::disk('local')->exists($path);
+            $s->has_stock_cero_csv = Storage::disk('local')->exists($path);
             $s->stock_cero_list = [];
 
             if ($s->has_stock_cero_csv) {
                 try {
-                    $contents = \Illuminate\Support\Facades\Storage::disk('local')->get($path);
+                    $contents = Storage::disk('local')->get($path);
                     $lines = preg_split("/\r\n|\n|\r/", $contents);
                     $lines = array_values(array_filter($lines, fn($x) => trim($x) !== ''));
                     if (!empty($lines) && strtolower(trim($lines[0])) === 'sku')

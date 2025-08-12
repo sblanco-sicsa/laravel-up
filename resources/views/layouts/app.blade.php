@@ -90,18 +90,35 @@
             <i class="bi bi-ui-checks-grid me-2"></i> Panel
         </h5>
         <ul class="nav flex-column px-3">
-            <li class="nav-item">
-                <a href="{{ route('sync-errors.index') }}"
-                    class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Errores de Sincronización
-                </a>
-            </li>
+
             <li class="nav-item">
                 <a href="{{ route('sync-history.index') }}"
                     class="nav-link {{ request()->routeIs('sync-history.index') ? 'active' : '' }}">
                     <i class="bi bi-clock-history me-2"></i> Historial de Sincronizaciones
                 </a>
             </li>
+
+            <li class="nav-item">
+                <a href="{{ route('sync-errors.index') }}"
+                    class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Errores de Sincronización
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a href="{{ route('categorias.sincronizadas', ['cliente' => 'familyoutlet']) }}"
+                    class="nav-link {{ request()->routeIs('categorias.sincronizadas') ? 'active' : '' }}">
+                    <i class="bi bi-tags-fill me-2"></i> Categorías Sincronizadas
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a href="{{ route('woo.categories.index', ['cliente' => 'familyoutlet']) }}"
+                    class="nav-link {{ request()->routeIs('woo.categories.index') ? 'active' : '' }}">
+                    <i class="bi bi-tags-fill me-2"></i> Categorías Woo
+                </a>
+            </li>
+
         </ul>
     </div>
 

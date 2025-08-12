@@ -32,88 +32,106 @@
     </form>
 
     <div class="table-responsive">
-        <table class="table table-bordered table-hover table-sm align-middle text-center small">
-            <thead class="table-dark">
-                <tr>
-                    <th>ID</th>
-                    <th>Cliente</th>
-                    <th>Inicio</th>
-                    <th>Fin</th>
-                    <th><i class="bi bi-plus-circle text-success" title="Creados"></i></th>
-                    <th><i class="bi bi-arrow-repeat text-primary" title="Actualizados"></i></th>
-                    <th><i class="bi bi-arrow-right-circle text-muted" title="Omitidos"></i></th>
-                    <th><i class="bi bi-exclamation-circle text-danger" title="Fallidos por categoría"></i></th>
-                    <th>Detalles</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($sincronizaciones as $sync)
-                    <tr>
-                        <td>{{ $sync->id }}</td>
-                        <td>{{ $sync->cliente }}</td>
+        
+ <table class="table table-bordered table-hover table-sm align-middle text-center small">
+    <thead class="table-dark">
+        <tr>
+            <th>ID</th>
+            <th>Cliente</th>
+            <th>Inicio</th>
+            <th>Fin</th>
+            <th>Duración (s)</th>
+            <th><i class="bi bi-plus-circle text-success" title="Creados"></i></th>
+            <th><i class="bi bi-arrow-repeat text-primary" title="Actualizados"></i></th>
+            <th><i class="bi bi-arrow-right-circle text-muted" title="Omitidos"></i></th>
+            <th><i class="bi bi-exclamation-circle text-danger" title="Fallidos por categoría"></i></th>
+            <th>Detalles</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach ($sincronizaciones as $sync)
+            <tr>
+                <td>{{ $sync->id }}</td>
+                <td>{{ $sync->cliente }}</td>
 
-                        {{-- Hora inicio en formato 12h con ícono --}}
-                        <td>
-                            @if($sync->started_at)
-                                @php 
-                                    $dt = \Carbon\Carbon::parse($sync->started_at);
-                                    $ampm = $dt->format('A');
-                                    $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
-                                @endphp
-                                <span title="{{ $dt->format('d/m/Y h:i:s A') }}">
-                                    {{ $dt->format('h:i:s A') }}
-                                    <i class="bi {{ $icono }}"></i>
-                                </span>
-                            @else
-                                —
-                            @endif
-                        </td>
+                {{-- Hora inicio (hh:mm AM/PM) --}}
+                <td>
+                    @if($sync->started_at)
+                        @php 
+                            $dt = \Carbon\Carbon::parse($sync->started_at);
+                            $ampm = $dt->format('A');
+                            $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
+                        @endphp
+                        <span title="{{ $dt->format('d/m/Y h:i A') }}">
+                            {{ $dt->format('h:i A') }}
+                            <i class="bi {{ $icono }}"></i>
+                        </span>
+                    @else
+                        —
+                    @endif
+                </td>
 
-                        {{-- Hora fin en formato 12h con ícono --}}
-                        <td>
-                            @if($sync->finished_at)
-                                @php 
-                                    $df = \Carbon\Carbon::parse($sync->finished_at);
-                                    $ampm = $df->format('A');
-                                    $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
-                                @endphp
-                                <span title="{{ $df->format('d/m/Y h:i:s A') }}">
-                                    {{ $df->format('h:i:s A') }}
-                                    <i class="bi {{ $icono }}"></i>
-                                </span>
-                            @else
-                                —
-                            @endif
-                        </td>
+                {{-- Hora fin (hh:mm AM/PM) --}}
+                <td>
+                    @if($sync->finished_at)
+                        @php 
+                            $df = \Carbon\Carbon::parse($sync->finished_at);
+                            $ampm = $df->format('A');
+                            $icono = $ampm === 'AM' ? 'bi-sun text-warning' : 'bi-moon text-primary';
+                        @endphp
+                        <span title="{{ $df->format('d/m/Y h:i A') }}">
+                            {{ $df->format('h:i A') }}
+                            <i class="bi {{ $icono }}"></i>
+                        </span>
+                    @else
+                        —
+                    @endif
+                </td>
 
-                        <td class="text-success fw-bold">{{ $sync->total_creados }}</td>
-                        <td class="text-primary fw-bold">{{ $sync->total_actualizados }}</td>
-                        <td class="text-muted">{{ $sync->total_omitidos }}</td>
-                        <td class="text-danger">{{ $sync->total_fallidos_categoria }}</td>
+                {{-- Duración en segundos con 2 decimales --}}
+                <td>
+                    @if($sync->started_at && $sync->finished_at)
+                        @php
+                            $segundos = \Carbon\Carbon::parse($sync->started_at)
+                                        ->floatDiffInSeconds(\Carbon\Carbon::parse($sync->finished_at));
+                        @endphp
+                        {{ number_format($segundos, 2) }}
+                    @else
+                        —
+                    @endif
+                </td>
 
-                        {{-- Columna de botones compacta --}}
-                        <td class="text-nowrap" style="width:1%; white-space:nowrap;">
-                            <div class="d-inline-flex align-items-center gap-1">
-                                <button
-                                    class="btn btn-info btn-sm px-2 py-1"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#modalDetalles-{{ $sync->id }}">
-                                    <i class="bi bi-eye"></i> Ver
-                                </button>
+                <td class="text-success fw-bold">{{ $sync->total_creados }}</td>
+                <td class="text-primary fw-bold">{{ $sync->total_actualizados }}</td>
+                <td class="text-muted">{{ $sync->total_omitidos }}</td>
+                <td class="text-danger">{{ $sync->total_fallidos_categoria }}</td>
 
-                                <button
-                                    class="btn btn-danger btn-sm px-2 py-1"
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#modalStockCero-{{ $sync->id }}"
-                                    @if(!$sync->has_stock_cero_csv) disabled @endif>
-                                    <i class="bi bi-clipboard-check"></i> Stock=0
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
+                {{-- Columna de botones --}}
+                <td class="text-nowrap" style="width:1%; white-space:nowrap;">
+                    <div class="d-inline-flex align-items-center gap-1">
+                        <button
+                            class="btn btn-info btn-sm px-2 py-1"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalDetalles-{{ $sync->id }}">
+                            <i class="bi bi-eye"></i> Ver
+                        </button>
+
+                        <button
+                            class="btn btn-danger btn-sm px-2 py-1"
+                            data-bs-toggle="modal"
+                            data-bs-target="#modalStockCero-{{ $sync->id }}"
+                            @if(!$sync->has_stock_cero_csv) disabled @endif>
+                            <i class="bi bi-clipboard-check"></i> Stock=0
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        @endforeach
+    </tbody>
+</table>
+
+
+
     </div>
 
     <div class="d-flex justify-content-center mt-4">
