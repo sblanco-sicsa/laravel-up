@@ -101,6 +101,15 @@
             </div>
         </div>
 
+        {{-- <div class="d-flex gap-2 mb-2">
+            <button id="btnEliminarSeleccion" class="btn btn-outline-danger">
+                <i class="fa-solid fa-trash-can me-1"></i> Eliminar seleccionadas
+            </button>
+            <button id="btnEliminarTodasHuerfanas" class="btn btn-danger">
+                <i class="fa-solid fa-broom me-1"></i> Eliminar TODAS huérfanas (eliminables)
+            </button>
+        </div> --}}
+
         <div class="d-flex gap-2 mb-2">
             <button id="btnEliminarSeleccion" class="btn btn-outline-danger">
                 <i class="fa-solid fa-trash-can me-1"></i> Eliminar seleccionadas
@@ -108,7 +117,11 @@
             <button id="btnEliminarTodasHuerfanas" class="btn btn-danger">
                 <i class="fa-solid fa-broom me-1"></i> Eliminar TODAS huérfanas (eliminables)
             </button>
+            <button id="btnSyncNow" class="btn btn-outline-primary">
+                <i class="fa-solid fa-rotate me-1"></i> Sincronizar desde SiReTT
+            </button>
         </div>
+
 
         <div class="card shadow-sm border-0">
             <div class="card-body">
@@ -175,12 +188,12 @@
                                         <button class="btn btn-sm btn-outline-danger btnDeleteOne" {{ ($r['count'] === 0) ? '' : 'disabled' }}>
                                             <i class="fa-solid fa-trash-can"></i>
                                         </button>
-                                        @if($r['slug'])
-                                            <a class="btn btn-sm btn-outline-secondary" target="_blank"
-                                                href="https://wordpress.local/wp-admin/edit-tags.php?taxonomy=product_cat">
-                                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                                            </a>
-                                        @endif
+                                        {{-- @if($r['slug'])
+                                        <a class="btn btn-sm btn-outline-secondary" target="_blank"
+                                            href="https://wordpress.local/wp-admin/edit-tags.php?taxonomy=product_cat">
+                                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                        </a>
+                                        @endif --}}
                                     </td>
                                 </tr>
                             @endforeach
@@ -308,7 +321,53 @@
                 Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Ocurrió un problema' });
             }
         });
+
+
+        const RUTA_SYNC_NOW = "{{ route('catsync.syncNow', ['cliente' => $cliente]) }}";
+
+
+        $('#btnSyncNow').on('click', async function () {
+            const ok = await Swal.fire({
+                icon: 'question',
+                title: '¿Sincronizar categorías?',
+                html: 'Ejecutará la sincronización completa. Puede tardar unos segundos.',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, sincronizar',
+                cancelButtonText: 'Cancelar'
+            });
+            if (!ok.isConfirmed) return;
+
+            Swal.fire({ title: 'Sincronizando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+            try {
+                const res = await fetch(RUTA_SYNC_NOW, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
+                const j = await res.json();
+
+                if (!j.ok) {
+                    return Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Error', footer: j.det || '' });
+                }
+
+                const a = j.api || {};
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'Sincronización completada',
+                    html: `
+        <div class="text-start">
+          <b>Creadas:</b> ${a.creadas_total ?? 0}<br>
+          <b>Renombradas:</b> ${a.renombradas_total ?? 0}<br>
+          <b>Duplicadas eliminadas:</b> ${(a.duplicados?.eliminadas_total) ?? 0}
+        </div>
+      `
+                });
+                location.reload();
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Fallo de red', text: e.message || 'Error' });
+            }
+        });
+
     </script>
+
+
 </body>
 
 </html>

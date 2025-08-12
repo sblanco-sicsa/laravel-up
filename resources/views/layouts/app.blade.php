@@ -18,19 +18,30 @@
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 
     <style>
+        :root {
+            /* fallback; se recalcula con JS según altura real de la navbar */
+            --nav-h: 56px;
+        }
+
         body {
             overflow-x: hidden;
             background-color: #f4f6f9;
             font-size: 0.875rem;
+            /* deja espacio para la navbar fija */
+            padding-top: var(--nav-h);
         }
 
+        /* Sidebar fija, colocada debajo de la navbar fija */
         .sidebar {
             background-color: #0f1c47;
-            min-height: 100vh;
-            padding-top: 1rem;
             position: fixed;
+            top: var(--nav-h);
             width: 230px;
+            min-height: calc(100vh - var(--nav-h));
+            height: calc(100vh - var(--nav-h));
+            padding-top: 1rem;
             z-index: 1000;
+            overflow-y: auto;
         }
 
         .sidebar .nav-link {
@@ -45,6 +56,7 @@
             border-radius: 0.375rem;
         }
 
+        /* El contenido respeta el ancho del sidebar y la navbar fija */
         .content-wrapper {
             margin-left: 230px;
             padding: 2rem;
@@ -59,6 +71,8 @@
             .sidebar {
                 transform: translateX(-100%);
                 transition: transform 0.3s ease-in-out;
+                /* en móvil también parte bajo la navbar */
+                width: 230px;
             }
 
             .sidebar.show {
@@ -78,7 +92,8 @@
 </head>
 
 <body>
-    <nav class="navbar navbar-dark bg-dark px-3">
+    <!-- HAZLA FIJA -->
+    <nav class="navbar navbar-dark bg-dark px-3 fixed-top">
         <button class="btn btn-outline-light d-md-none sidebar-toggler me-2" onclick="toggleSidebar()">
             <i class="fas fa-bars"></i>
         </button>
@@ -93,32 +108,25 @@
 
             <li class="nav-item">
                 <a href="{{ route('sync-history.index') }}"
-                    class="nav-link {{ request()->routeIs('sync-history.index') ? 'active' : '' }}">
+                   class="nav-link {{ request()->routeIs('sync-history.index') ? 'active' : '' }}">
                     <i class="bi bi-clock-history me-2"></i> Historial de Sincronizaciones
+                </a>
+            </li>
+
+            @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
+            <li class="nav-item">
+                <a href="{{ route('catsync.index', ['cliente' => $clienteActual]) }}"
+                   class="nav-link {{ request()->routeIs('catsync.index') ? 'active' : '' }}">
+                    <i class="bi bi-tags-fill me-2"></i> Categorías Sincronizadas
                 </a>
             </li>
 
             <li class="nav-item">
                 <a href="{{ route('sync-errors.index') }}"
-                    class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
+                   class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i> Errores de Sincronización
                 </a>
             </li>
-
-            {{-- <li class="nav-item">
-                <a href="{{ route('categorias_sincronizadas.index', ['cliente' => 'familyoutlet']) }}"
-                    class="nav-link {{ request()->routeIs('categorias.sincronizadas') ? 'active' : '' }}">
-                    <i class="bi bi-tags-fill me-2"></i> Categorías Sincronizadas
-                </a>
-            </li> --}}
-
-            {{-- <li class="nav-item">
-                <a href="{{ route('admin.woo.categories.index', ['cliente' => 'familyoutlet']) }}"
-                    class="nav-link {{ request()->routeIs('woo.categories.index') ? 'active' : '' }}">
-                    <i class="bi bi-tags-fill me-2"></i> Categorías Woo
-                </a>
-            </li> --}}
-
         </ul>
     </div>
 
@@ -130,6 +138,20 @@
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('show');
         }
+
+        // Calcular altura real de la navbar y setear --nav-h (soporta cambios por responsive)
+        (function () {
+            function setNavHeight() {
+                var nav = document.querySelector('.navbar');
+                if (!nav) return;
+                var h = nav.offsetHeight || 56;
+                document.documentElement.style.setProperty('--nav-h', h + 'px');
+            }
+            setNavHeight();
+            window.addEventListener('resize', setNavHeight);
+            // Por si hay fuentes web que cambian la altura después de cargar
+            window.addEventListener('load', setNavHeight);
+        })();
     </script>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

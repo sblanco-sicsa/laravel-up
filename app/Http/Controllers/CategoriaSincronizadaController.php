@@ -108,88 +108,183 @@ class CategoriaSincronizadaController extends Controller
     }
 
     // Elimina una (según reglas de Woo: count==0 y sin hijos)
-    // public function deleteOne(string $cliente, int $wooId)
+    // public function deleteOne(string $cliente, int $wooId)    
     // {
     //     $cred = $this->credWoo($cliente);
-    //     if (!$cred)
+    //     if (!$cred) {
     //         return response()->json(['ok' => false, 'msg' => 'Sin credenciales Woo'], 404);
+    //     }
 
-    //     // Ver categoría
-    //     $cat = Http::withBasicAuth($cred->user, $cred->password)
+    //     // 1) BORRAR EN BD LOCAL PRIMERO
+    //     $local = $this->deleteLocalByWooId($cliente, $wooId, true); // exige productos_woo=0 o null
+
+    //     // 2) Intentar leer en Woo (si ya no existe, lo consideramos ok)
+    //     $get = Http::withBasicAuth($cred->user, $cred->password)
     //         ->timeout(30)
     //         ->get("{$cred->base_url}/products/categories/{$wooId}");
-    //     if ($cat->failed())
-    //         return response()->json(['ok' => false, 'msg' => 'No se pudo leer categoría', 'det' => $cat->body()], 500);
-    //     $catJ = $cat->json();
-    //     if ((int) ($catJ['count'] ?? 0) !== 0)
-    //         return response()->json(['ok' => false, 'msg' => 'La categoría tiene productos (count>0)'], 422);
 
-    //     // Hijos
+    //     if ($get->status() === 404) {
+    //         // En Woo ya no existe. Devolvemos ok porque en BD ya borramos.
+    //         return response()->json([
+    //             'ok' => true,
+    //             'id' => $wooId,
+    //             'woo' => ['status' => 'not_found', 'stage' => 'get'],
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_method' => $local['method'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ]);
+    //     }
+    //     if ($get->failed()) {
+    //         // Otro error real de Woo: informamos pero ya se borró localmente
+    //         return response()->json([
+    //             'ok' => false,
+    //             'msg' => 'No se pudo leer categoría en Woo',
+    //             'det' => $get->body(),
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ], 500);
+    //     }
+
+    //     $cat = $get->json();
+    //     if ((int) ($cat['count'] ?? 0) !== 0) {
+    //         return response()->json([
+    //             'ok' => false,
+    //             'msg' => 'La categoría tiene productos (count>0)',
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ], 422);
+    //     }
+
+    //     // Verifica que no tenga hijos (si los hay, no borramos en Woo)
     //     $hijos = Http::withBasicAuth($cred->user, $cred->password)
     //         ->timeout(30)
     //         ->get("{$cred->base_url}/products/categories", ['per_page' => 1, 'parent' => $wooId]);
+
     //     if ($hijos->successful() && collect($hijos->json())->isNotEmpty()) {
-    //         return response()->json(['ok' => false, 'msg' => 'Tiene subcategorías. Elimínalas primero.'], 422);
+    //         return response()->json([
+    //             'ok' => false,
+    //             'msg' => 'Tiene subcategorías en Woo; elimínalas primero.',
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ], 422);
     //     }
 
+    //     // 3) BORRAR EN WOO
     //     $del = Http::withBasicAuth($cred->user, $cred->password)
     //         ->timeout(30)
     //         ->delete("{$cred->base_url}/products/categories/{$wooId}", ['force' => true]);
 
-    //     return $del->successful()
-    //         ? response()->json(['ok' => true, 'id' => $wooId])
-    //         : response()->json(['ok' => false, 'msg' => 'Woo error', 'det' => $del->body()], 500);
+    //     if ($del->status() === 404) {
+    //         // Ya no estaba: igual devolvemos ok
+    //         return response()->json([
+    //             'ok' => true,
+    //             'id' => $wooId,
+    //             'woo' => ['status' => 'not_found', 'stage' => 'delete'],
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_method' => $local['method'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ]);
+    //     }
+
+    //     if ($del->failed()) {
+    //         return response()->json([
+    //             'ok' => false,
+    //             'msg' => 'Woo error al eliminar',
+    //             'det' => $del->body(),
+    //             'db_rows_deleted' => $local['deleted'],
+    //             'db_ids_deleted' => $local['ids'],
+    //         ], 500);
+    //     }
+
+    //     return response()->json([
+    //         'ok' => true,
+    //         'id' => $wooId,
+    //         'woo' => ['status' => 'deleted'],
+    //         'db_rows_deleted' => $local['deleted'],
+    //         'db_method' => $local['method'],
+    //         'db_ids_deleted' => $local['ids'],
+    //     ]);
     // }
+
+
+
 
 
     public function deleteOne(string $cliente, int $wooId)
     {
+        // 0) Credenciales Woo
         $cred = $this->credWoo($cliente);
         if (!$cred) {
             return response()->json(['ok' => false, 'msg' => 'Sin credenciales Woo'], 404);
         }
 
-        // 1) BORRAR EN BD LOCAL PRIMERO
-        $local = $this->deleteLocalByWooId($cliente, $wooId, true); // exige productos_woo=0 o null
+        // 1) Verificar que exista en tracking local y que sea eliminable
+        $row = CategoriaSincronizada::where('cliente', $cliente)
+            ->where('woocommerce_id', $wooId)
+            ->first();
 
-        // 2) Intentar leer en Woo (si ya no existe, lo consideramos ok)
+        if (!$row) {
+            return response()->json(['ok' => false, 'msg' => 'Categoría no encontrada para este cliente'], 404);
+        }
+
+        // Regla: sin productos y (si existe) bandera eliminable
+        $localCount = (int) ($row->count ?? $row->productos_woo ?? 0);
+        $tieneProductosLocal = $localCount > 0;
+
+        // Si tu modelo tiene columna 'eliminable' úsala; si no, solo confía en count==0
+        $eliminableFlagExiste = isset($row->eliminable);
+        $esEliminable = $eliminableFlagExiste ? (bool) $row->eliminable : ($localCount === 0);
+
+        if ($tieneProductosLocal || !$esEliminable) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'No permitido: la categoría no es eliminable (tiene productos o no cumple condiciones)',
+                'det' => [
+                    'local_count' => $localCount,
+                    'eliminable' => $eliminableFlagExiste ? (bool) $row->eliminable : null,
+                ]
+            ], 403);
+        }
+
+        // 2) Intentar leer en Woo (si ya no existe, borra local y devuelve ok)
         $get = Http::withBasicAuth($cred->user, $cred->password)
             ->timeout(30)
             ->get("{$cred->base_url}/products/categories/{$wooId}");
 
         if ($get->status() === 404) {
-            // En Woo ya no existe. Devolvemos ok porque en BD ya borramos.
+            // Ya no existe en Woo: borra local ahora
+            $local = $this->deleteLocalByWooId($cliente, $wooId, true); // true => exige productos_woo=0 o null
             return response()->json([
                 'ok' => true,
                 'id' => $wooId,
                 'woo' => ['status' => 'not_found', 'stage' => 'get'],
-                'db_rows_deleted' => $local['deleted'],
-                'db_method' => $local['method'],
-                'db_ids_deleted' => $local['ids'],
+                'db_rows_deleted' => $local['deleted'] ?? null,
+                'db_method' => $local['method'] ?? null,
+                'db_ids_deleted' => $local['ids'] ?? [],
             ]);
         }
+
         if ($get->failed()) {
-            // Otro error real de Woo: informamos pero ya se borró localmente
+            // No tocar BD local si Woo falló al leer
             return response()->json([
                 'ok' => false,
                 'msg' => 'No se pudo leer categoría en Woo',
                 'det' => $get->body(),
-                'db_rows_deleted' => $local['deleted'],
-                'db_ids_deleted' => $local['ids'],
             ], 500);
         }
 
         $cat = $get->json();
-        if ((int) ($cat['count'] ?? 0) !== 0) {
+        $wooCount = (int) ($cat['count'] ?? 0);
+        if ($wooCount !== 0) {
+            // Si Woo dice que tiene productos, no borrar (aunque local diga 0)
             return response()->json([
                 'ok' => false,
-                'msg' => 'La categoría tiene productos (count>0)',
-                'db_rows_deleted' => $local['deleted'],
-                'db_ids_deleted' => $local['ids'],
+                'msg' => 'La categoría tiene productos en Woo (count>0)',
+                'det' => ['woo_count' => $wooCount],
             ], 422);
         }
 
-        // Verifica que no tenga hijos (si los hay, no borramos en Woo)
+        // 2.1) Verificar que no tenga hijos en Woo
         $hijos = Http::withBasicAuth($cred->user, $cred->password)
             ->timeout(30)
             ->get("{$cred->base_url}/products/categories", ['per_page' => 1, 'parent' => $wooId]);
@@ -198,45 +293,46 @@ class CategoriaSincronizadaController extends Controller
             return response()->json([
                 'ok' => false,
                 'msg' => 'Tiene subcategorías en Woo; elimínalas primero.',
-                'db_rows_deleted' => $local['deleted'],
-                'db_ids_deleted' => $local['ids'],
             ], 422);
         }
 
-        // 3) BORRAR EN WOO
+        // 3) Borrar en Woo
         $del = Http::withBasicAuth($cred->user, $cred->password)
             ->timeout(30)
             ->delete("{$cred->base_url}/products/categories/{$wooId}", ['force' => true]);
 
         if ($del->status() === 404) {
-            // Ya no estaba: igual devolvemos ok
+            // Ya no estaba: procede a borrar local y devolver ok
+            $local = $this->deleteLocalByWooId($cliente, $wooId, true);
             return response()->json([
                 'ok' => true,
                 'id' => $wooId,
                 'woo' => ['status' => 'not_found', 'stage' => 'delete'],
-                'db_rows_deleted' => $local['deleted'],
-                'db_method' => $local['method'],
-                'db_ids_deleted' => $local['ids'],
+                'db_rows_deleted' => $local['deleted'] ?? null,
+                'db_method' => $local['method'] ?? null,
+                'db_ids_deleted' => $local['ids'] ?? [],
             ]);
         }
 
         if ($del->failed()) {
+            // No borrar local si Woo falló
             return response()->json([
                 'ok' => false,
                 'msg' => 'Woo error al eliminar',
                 'det' => $del->body(),
-                'db_rows_deleted' => $local['deleted'],
-                'db_ids_deleted' => $local['ids'],
             ], 500);
         }
+
+        // 4) Woo OK -> ahora sí borra local
+        $local = $this->deleteLocalByWooId($cliente, $wooId, true);
 
         return response()->json([
             'ok' => true,
             'id' => $wooId,
             'woo' => ['status' => 'deleted'],
-            'db_rows_deleted' => $local['deleted'],
-            'db_method' => $local['method'],
-            'db_ids_deleted' => $local['ids'],
+            'db_rows_deleted' => $local['deleted'] ?? null,
+            'db_method' => $local['method'] ?? null,
+            'db_ids_deleted' => $local['ids'] ?? [],
         ]);
     }
 
@@ -329,56 +425,56 @@ class CategoriaSincronizadaController extends Controller
     }
 
 
-// --- helper: token por cliente, leyendo de BD ---
-private function getSyncToken(string $cliente): ?string
-{
-    // 1) priorizamos Sirett (o el que uses para validar el middleware)
-    $credSirett = ApiConnector::getCredentials($cliente, 'sirett');
-    if ($credSirett && !empty($credSirett->api_token)) {
-        return $credSirett->api_token;
+    // --- helper: token por cliente, leyendo de BD ---
+    private function getSyncToken(string $cliente): ?string
+    {
+        // 1) priorizamos Sirett (o el que uses para validar el middleware)
+        $credSirett = ApiConnector::getCredentials($cliente, 'sirett');
+        if ($credSirett && !empty($credSirett->api_token)) {
+            return $credSirett->api_token;
+        }
+
+        // 2) fallback a Woo si también guarda token
+        $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
+        if ($credWoo && !empty($credWoo->api_token)) {
+            return $credWoo->api_token;
+        }
+
+        // 3) último recurso (por si lo mantienes para pruebas)
+        return config('services.sync.token') ?? env('SYNC_API_TOKEN');
     }
 
-    // 2) fallback a Woo si también guarda token
-    $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
-    if ($credWoo && !empty($credWoo->api_token)) {
-        return $credWoo->api_token;
-    }
+    // --- acción que dispara la sync desde la UI ---
+    public function syncNow(string $cliente, Request $request)
+    {
+        $token = $this->getSyncToken($cliente);
+        if (!$token) {
+            return response()->json(['ok' => false, 'msg' => 'No hay api_token para este cliente'], 403);
+        }
 
-    // 3) último recurso (por si lo mantienes para pruebas)
-    return config('services.sync.token') ?? env('SYNC_API_TOKEN');
-}
+        // mismo endpoint que usas en Postman:
+        $apiUrl = url("/api/{$cliente}/woocommerce/categories/sync-from-sirett");
 
-// --- acción que dispara la sync desde la UI ---
-public function syncNow(string $cliente, Request $request)
-{
-    $token = $this->getSyncToken($cliente);
-    if (!$token) {
-        return response()->json(['ok' => false, 'msg' => 'No hay api_token para este cliente'], 403);
-    }
+        Log::info('catsync.syncNow.call', ['cliente' => $cliente, 'apiUrl' => $apiUrl]);
 
-    // mismo endpoint que usas en Postman:
-    $apiUrl = url("/api/{$cliente}/woocommerce/categories/sync-from-sirett");
+        $res = Http::withToken($token)
+            ->timeout(600)               // ajústalo según dure tu sync
+            ->post($apiUrl, []);         // body vacío si tu API no requiere más
 
-    Log::info('catsync.syncNow.call', ['cliente' => $cliente, 'apiUrl' => $apiUrl]);
+        if ($res->failed()) {
+            return response()->json([
+                'ok' => false,
+                'msg' => 'Error al ejecutar la sincronización',
+                'status' => $res->status(),
+                'det' => $res->body(),
+            ], 500);
+        }
 
-    $res = Http::withToken($token)
-        ->timeout(600)               // ajústalo según dure tu sync
-        ->post($apiUrl, []);         // body vacío si tu API no requiere más
-
-    if ($res->failed()) {
         return response()->json([
-            'ok'     => false,
-            'msg'    => 'Error al ejecutar la sincronización',
-            'status' => $res->status(),
-            'det'    => $res->body(),
-        ], 500);
+            'ok' => true,
+            'api' => $res->json(),        // devolvemos el resumen de tu API
+        ]);
     }
-
-    return response()->json([
-        'ok'  => true,
-        'api' => $res->json(),        // devolvemos el resumen de tu API
-    ]);
-}
 
 
 

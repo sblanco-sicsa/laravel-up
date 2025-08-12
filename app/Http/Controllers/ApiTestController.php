@@ -1162,10 +1162,10 @@ class ApiTestController extends Controller
         return preg_replace('/\s+/', ' ', $n);
     }
 
-    // private function categoryKey(string $name): string
-    // {
-    //     return $this->catKey($name);
-    // }
+    private function categoryKey(string $name): string
+    {
+        return $this->catKey($name);
+    }
 
     private function categoryDisplay(string $name): string
     {
@@ -2452,43 +2452,43 @@ class ApiTestController extends Controller
 
 
 
-    private function normalizeNoAccents(?string $s): string
-    {
-        $s = is_string($s) ? trim($s) : '';
-        // minúsculas + espacios
-        $s = \Illuminate\Support\Str::of($s)->lower()->squish()->toString();
+    // private function normalizeNoAccents(?string $s): string
+    // {
+    //     $s = is_string($s) ? trim($s) : '';
+    //     // minúsculas + espacios
+    //     $s = \Illuminate\Support\Str::of($s)->lower()->squish()->toString();
 
-        // quitar tildes/acentos
-        $noAcc = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
-        if ($noAcc !== false && $noAcc !== null) {
-            $s = $noAcc;
-        } else {
-            // respaldo por si iconv falla en tu hosting
-            $s = strtr($s, [
-                'á' => 'a',
-                'é' => 'e',
-                'í' => 'i',
-                'ó' => 'o',
-                'ú' => 'u',
-                'ü' => 'u',
-                'ñ' => 'n'
-            ]);
-        }
+    //     // quitar tildes/acentos
+    //     $noAcc = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s);
+    //     if ($noAcc !== false && $noAcc !== null) {
+    //         $s = $noAcc;
+    //     } else {
+    //         // respaldo por si iconv falla en tu hosting
+    //         $s = strtr($s, [
+    //             'á' => 'a',
+    //             'é' => 'e',
+    //             'í' => 'i',
+    //             'ó' => 'o',
+    //             'ú' => 'u',
+    //             'ü' => 'u',
+    //             'ñ' => 'n'
+    //         ]);
+    //     }
 
-        // normaliza espacios múltiples
-        $s = preg_replace('/\s+/', ' ', $s);
-        return trim($s);
-    }
+    //     // normaliza espacios múltiples
+    //     $s = preg_replace('/\s+/', ' ', $s);
+    //     return trim($s);
+    // }
 
-    private function categoryKey(?string $name): string
-    {
-        return $this->normalizeNoAccents($name);
-    }
+    // private function categoryKey(?string $name): string
+    // {
+    //     return $this->normalizeNoAccents($name);
+    // }
 
-    private function normalizeText(?string $text): string
-    {
-        return $this->normalizeNoAccents($text);
-    }
+    // private function normalizeText(?string $text): string
+    // {
+    //     return $this->normalizeNoAccents($text);
+    // }
 
 
 
@@ -2915,28 +2915,28 @@ class ApiTestController extends Controller
 
 
     // ---- Helpers de texto ----
-    // private function normalizeText(?string $s): string
-    // {
-    //     if ($s === null)
-    //         return '';
-    //     // 1) Unificar encoding y entidades HTML
-    //     $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // &amp; -> &
-    //     $s = strip_tags($s);
+    private function normalizeText(?string $s): string
+    {
+        if ($s === null)
+            return '';
+        // 1) Unificar encoding y entidades HTML
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // &amp; -> &
+        $s = strip_tags($s);
 
-    //     // 2) Reemplazar espacios raros y colapsar
-    //     $s = str_replace(["\xC2\xA0", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D"], ' ', $s); // nbsp, ZWSP, etc.
-    //     $s = preg_replace('/\s+/u', ' ', $s);
+        // 2) Reemplazar espacios raros y colapsar
+        $s = str_replace(["\xC2\xA0", "\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D"], ' ', $s); // nbsp, ZWSP, etc.
+        $s = preg_replace('/\s+/u', ' ', $s);
 
-    //     // 3) Recortes
-    //     $s = trim($s);
+        // 3) Recortes
+        $s = trim($s);
 
-    //     // 4) Normalización Unicode (NFC). Si intl no está, se omite en silencio.
-    //     if (class_exists(\Normalizer::class) && \Normalizer::isNormalized($s, \Normalizer::FORM_C) === false) {
-    //         $s = \Normalizer::normalize($s, \Normalizer::FORM_C);
-    //     }
+        // 4) Normalización Unicode (NFC). Si intl no está, se omite en silencio.
+        if (class_exists(\Normalizer::class) && \Normalizer::isNormalized($s, \Normalizer::FORM_C) === false) {
+            $s = \Normalizer::normalize($s, \Normalizer::FORM_C);
+        }
 
-    //     return $s;
-    // }
+        return $s;
+    }
 
 
     private function firstDiff(string $a, string $b): array
