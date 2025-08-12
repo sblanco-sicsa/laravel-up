@@ -31,22 +31,14 @@ Route::get('/sync/{sync}/stock-cero', [SyncHistoryController::class, 'descargarS
 
 
 
-Route::middleware(['web','auth'])->group(function () {
-    // Página
-    Route::get('/admin/{cliente}/woocommerce/categories', [WooCategoriesPageController::class, 'index'])
-        ->name('woo.categories.index');
+Route::get('/admin/categorias-sincronizadas/{cliente}', [CategoriaSincronizadaController::class, 'index'])
+    ->name('catsync.index');
 
-    // Proxies (AJAX desde el Blade) -> llaman al API con token tomado desde BD
-    Route::get('/admin/{cliente}/woocommerce/categories/data', [WooCategoriesPageController::class, 'data'])
-        ->name('woo.categories.data');
+Route::post('/admin/categorias-sincronizadas/{cliente}/eliminar-seleccion', [CategoriaSincronizadaController::class, 'deleteSelected'])
+    ->name('catsync.deleteSelected');
 
-    Route::delete('/admin/{cliente}/woocommerce/categories/zero', [WooCategoriesPageController::class, 'deleteZeros'])
-        ->name('woo.categories.delete-zero.web');
+Route::post('/admin/categorias-sincronizadas/{cliente}/eliminar-todas-huerfanas', [CategoriaSincronizadaController::class, 'deleteAllOrphans'])
+    ->name('catsync.deleteAllOrphans');
 
-    Route::delete('/admin/{cliente}/woocommerce/categories/{id}', [WooCategoriesPageController::class, 'deleteOne'])
-        ->whereNumber('id')
-        ->name('woo.categories.delete-one.web');
-
-    Route::post('/admin/{cliente}/woocommerce/categories/sync', [WooCategoriesPageController::class, 'sync'])
-        ->name('woo.categories.sync.web');
-});
+Route::delete('/admin/categorias-sincronizadas/{cliente}/{wooId}', [CategoriaSincronizadaController::class, 'deleteOne'])
+    ->name('catsync.deleteOne');

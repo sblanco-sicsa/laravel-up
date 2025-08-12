@@ -105,19 +105,19 @@
                 </a>
             </li>
 
-            <li class="nav-item">
-                <a href="{{ route('categorias.sincronizadas', ['cliente' => 'familyoutlet']) }}"
+            {{-- <li class="nav-item">
+                <a href="{{ route('categorias_sincronizadas.index', ['cliente' => 'familyoutlet']) }}"
                     class="nav-link {{ request()->routeIs('categorias.sincronizadas') ? 'active' : '' }}">
                     <i class="bi bi-tags-fill me-2"></i> Categorías Sincronizadas
                 </a>
-            </li>
+            </li> --}}
 
-            <li class="nav-item">
-                <a href="{{ route('woo.categories.index', ['cliente' => 'familyoutlet']) }}"
+            {{-- <li class="nav-item">
+                <a href="{{ route('admin.woo.categories.index', ['cliente' => 'familyoutlet']) }}"
                     class="nav-link {{ request()->routeIs('woo.categories.index') ? 'active' : '' }}">
                     <i class="bi bi-tags-fill me-2"></i> Categorías Woo
                 </a>
-            </li>
+            </li> --}}
 
         </ul>
     </div>
