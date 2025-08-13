@@ -7,6 +7,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Services\ApiConnector;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 
 class CategoriaSincronizadaController extends Controller
@@ -477,7 +480,629 @@ class CategoriaSincronizadaController extends Controller
     }
 
 
+    // Vista árbol
+    public function tree(string $cliente)
+    {
+        return view('categorias_sincronizadas.tree', compact('cliente'));
+    }
 
+
+    public function apiTree(string $cliente)
+    {
+        $cats = CategoriaSincronizada::cliente($cliente)
+            ->orderBy('parent_id')
+            ->orderBy('orden')
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'parent_id', 'woocommerce_id']);
+
+        $data = $cats->map(function ($c) {
+            $isMaster = is_null($c->parent_id);
+            return [
+                'id' => (string) $c->id,
+                'parent' => $isMaster ? '#' : (string) $c->parent_id,
+                'text' => $c->nombre,
+                'type' => $isMaster ? 'master' : 'child',
+                'li_attr' => [
+                    'data-wid' => $c->woocommerce_id,
+                    'class' => $isMaster ? 'is-master' : 'is-child',
+                    'title' => $isMaster ? 'Categoría master' : 'Categoría hija',
+                ],
+            ];
+        })->values();
+
+        return response()->json($data);
+    }
+
+
+
+    // public function applyManualHierarchyToWoo(string $cliente)
+    // {
+    //     // 1) Credenciales
+    //     $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
+    //     if (!$credWoo) {
+    //         return response()->json(['error' => 'Credenciales WooCommerce no encontradas'], 404);
+    //     }
+    //     $http = $this->wooClient($credWoo);
+    //     $api = $http['base'];
+    //     $auth = $http['withAuth'];
+
+    //     // 2) Cargar categorías locales (jerarquía manual)
+    //     $cats = CategoriaSincronizada::cliente($cliente)
+    //         ->orderBy('parent_id')->orderBy('orden')->orderBy('nombre')
+    //         ->get(['id', 'nombre', 'slug', 'parent_id', 'orden', 'woocommerce_id']);
+
+    //     if ($cats->isEmpty()) {
+    //         return response()->json(['error' => 'No hay categorías para procesar'], 422);
+    //     }
+
+    //     // 3) Mapas rápidos
+    //     $byId = $cats->keyBy('id')->map(fn($c) => $c->toArray())->all();
+
+    //     // 4) Orden topológico por profundidad (padres antes que hijos)
+    //     $withDepth = $cats->map(function ($c) use ($byId) {
+    //         return [
+    //             'id' => $c->id,
+    //             'nombre' => $c->nombre,
+    //             'slug' => $this->normalizeSlug($c->slug, $c->nombre),
+    //             'parent_id' => $c->parent_id,
+    //             'orden' => (int) $c->orden,
+    //             'woocommerce_id' => $c->woocommerce_id,
+    //             'depth' => $this->catDepth($byId, $c->id),
+    //         ];
+    //     })->sortBy('depth')->values();
+
+    //     // 5) Crear las que no existen en Woo, de arriba hacia abajo
+    //     foreach ($withDepth as $c) {
+    //         if ($c['woocommerce_id'])
+    //             continue;
+
+    //         // Resolver parent Woo ID (0 si master)
+    //         $parentWoo = 0;
+    //         if ($c['parent_id']) {
+    //             $parentLocal = $byId[$c['parent_id']] ?? null;
+    //             if ($parentLocal && !empty($parentLocal['woocommerce_id'])) {
+    //                 $parentWoo = (int) $parentLocal['woocommerce_id'];
+    //             } else {
+    //                 // Si el padre aún no tiene woo_id, salta y se intentará en la siguiente pasada
+    //                 continue;
+    //             }
+    //         }
+
+    //         // Crear en Woo (seguro, 1 a 1 para mapear ID con certeza)
+    //         $payload = [
+    //             'name' => $c['nombre'],
+    //             'slug' => $c['slug'],
+    //             'parent' => $parentWoo,
+    //             'menu_order' => $c['orden'],
+    //         ];
+
+    //         $wooCatId = $this->resolveWooCategoryId($cliente, $item['familia'] ?? null);
+
+    //         if ($wooCatId) {
+    //             $payload['categories'] = [['id' => $wooCatId]];
+    //         } else {
+    //             // Si no hay mapeo, decide:
+    //             // 1) Omitir la categoría
+    //             // 2) Loguear para revisar luego
+    //             Log::warning('Producto sin categoría mapeada', ['cliente' => $cliente, 'familia' => $item['familia'] ?? null, 'sku' => $item['codigo'] ?? null]);
+    //         }
+
+    //         $res = $auth()->post("$api/products/categories", $payload);
+    //         if ($res->failed()) {
+    //             // Puedes loguear detalles y continuar
+    //             Log::error('Woo create category failed', ['cliente' => $cliente, 'payload' => $payload, 'resp' => $res->body()]);
+    //             continue;
+    //         }
+    //         $data = $res->json();
+    //         // Actualizar en BD: woo_id + (por coherencia) woocommerce_parent_id
+    //         CategoriaSincronizada::where('id', $c['id'])->update([
+    //             'woocommerce_id' => $data['id'] ?? null,
+    //             'woocommerce_parent_id' => $data['parent'] ?? null,
+    //         ]);
+
+    //         // Refrescar mapa en memoria
+    //         $byId[$c['id']]['woocommerce_id'] = $data['id'] ?? null;
+    //     }
+
+    //     // 6) Actualizar parent y orden en Woo para TODAS según tu jerarquía
+    //     // (incluye las recién creadas y las ya existentes)
+    //     foreach ($withDepth as $c) {
+    //         $wooId = $byId[$c['id']]['woocommerce_id'] ?? null;
+    //         if (!$wooId)
+    //             continue;
+
+    //         // Resolver parent Woo final según la jerarquía manual
+    //         $parentWoo = 0;
+    //         if ($c['parent_id']) {
+    //             $parentLocal = $byId[$c['parent_id']] ?? null;
+    //             $parentWoo = (int) ($parentLocal['woocommerce_id'] ?? 0);
+    //             if ($parentWoo === 0) {
+    //                 // Si aún no se pudo resolver, salta (próximo loop lo corregirá)
+    //                 continue;
+    //             }
+    //         }
+
+    //         $payload = [
+    //             'parent' => $parentWoo,
+    //             'menu_order' => (int) $c['orden'],
+    //         ];
+
+    //         $wooCatId = $this->resolveWooCategoryId($cliente, $item['familia'] ?? null);
+
+    //         if ($wooCatId) {
+    //             $payload['categories'] = [['id' => $wooCatId]];
+    //         } else {
+    //             // Si no hay mapeo, decide:
+    //             // 1) Omitir la categoría
+    //             // 2) Loguear para revisar luego
+    //             Log::warning('Producto sin categoría mapeada', ['cliente' => $cliente, 'familia' => $item['familia'] ?? null, 'sku' => $item['codigo'] ?? null]);
+    //         }
+
+    //         $res = $auth()->put("$api/products/categories/{$wooId}", $payload);
+    //         if ($res->failed()) {
+    //             Log::error('Woo update category failed', ['cliente' => $cliente, 'id' => $wooId, 'payload' => $payload, 'resp' => $res->body()]);
+    //             continue;
+    //         }
+
+    //         // Mantener coherencia local del parent_id de Woo (opcional)
+    //         CategoriaSincronizada::where('id', $c['id'])->update([
+    //             'woocommerce_parent_id' => $parentWoo ?: null,
+    //         ]);
+    //     }
+
+    //     return response()->json(['ok' => true, 'msg' => 'Jerarquía manual aplicada en Woo.']);
+    // }
+
+
+    public function applyManualHierarchyToWoo(string $cliente)
+    {
+        // 1) Credenciales
+        $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
+        if (!$credWoo) {
+            return response()->json(['error' => 'Credenciales WooCommerce no encontradas'], 404);
+        }
+        $http = $this->wooClient($credWoo);
+        $api = $http['base'];
+        $auth = $http['withAuth'];
+
+        // 2) Cargar categorías locales (jerarquía manual)
+        $cats = CategoriaSincronizada::cliente($cliente)
+            ->orderBy('parent_id')->orderBy('orden')->orderBy('nombre')
+            ->get(['id', 'nombre', 'slug', 'parent_id', 'orden', 'woocommerce_id']);
+
+        if ($cats->isEmpty()) {
+            return response()->json(['error' => 'No hay categorías para procesar'], 422);
+        }
+
+        // 3) Mapas rápidos
+        $byId = $cats->keyBy('id')->map(fn($c) => $c->toArray())->all();
+
+        // 4) Orden topológico por profundidad (padres antes que hijos)
+        $withDepth = $cats->map(function ($c) use ($byId) {
+            return [
+                'id' => $c->id,
+                'nombre' => $c->nombre,
+                'slug' => $this->normalizeSlug($c->slug, $c->nombre),
+                'parent_id' => $c->parent_id,
+                'orden' => (int) $c->orden,
+                'woocommerce_id' => $c->woocommerce_id,
+                'depth' => $this->catDepth($byId, $c->id),
+            ];
+        })->sortBy('depth')->values();
+
+        // 5) Crear en Woo las que no existen (padres primero)
+        foreach ($withDepth as $c) {
+            if ($c['woocommerce_id'])
+                continue;
+
+            // Resolver parent Woo ID (0 si master)
+            $parentWoo = 0;
+            if ($c['parent_id']) {
+                $parentLocal = $byId[$c['parent_id']] ?? null;
+                if ($parentLocal && !empty($parentLocal['woocommerce_id'])) {
+                    $parentWoo = (int) $parentLocal['woocommerce_id'];
+                } else {
+                    // Si el padre aún no tiene woo_id (raro por el orden), salta y se intentará luego
+                    continue;
+                }
+            }
+
+            $payload = [
+                'name' => $c['nombre'],
+                'slug' => $c['slug'],
+                'parent' => $parentWoo,
+                'menu_order' => (int) $c['orden'],
+            ];
+
+            $res = $auth()->post("$api/products/categories", $payload);
+            if ($res->failed()) {
+                Log::error('Woo create category failed', [
+                    'cliente' => $cliente,
+                    'payload' => $payload,
+                    'resp' => $res->body()
+                ]);
+                continue;
+            }
+
+            $data = $res->json();
+            // Actualiza BD local con IDs de Woo
+            CategoriaSincronizada::where('id', $c['id'])->update([
+                'woocommerce_id' => $data['id'] ?? null,
+                'woocommerce_parent_id' => $data['parent'] ?? null,
+            ]);
+
+            // Refrescar mapa en memoria
+            $byId[$c['id']]['woocommerce_id'] = $data['id'] ?? null;
+        }
+
+        // 6) Alinear parent y orden en Woo para todas (incluye ya existentes)
+        foreach ($withDepth as $c) {
+            $wooId = $byId[$c['id']]['woocommerce_id'] ?? null;
+            if (!$wooId)
+                continue;
+
+            $parentWoo = 0;
+            if ($c['parent_id']) {
+                $parentLocal = $byId[$c['parent_id']] ?? null;
+                $parentWoo = (int) ($parentLocal['woocommerce_id'] ?? 0);
+                if ($parentWoo === 0) {
+                    // Si aún no se resolvió, se corregirá en la siguiente ejecución
+                    continue;
+                }
+            }
+
+            $payload = [
+                'parent' => $parentWoo,
+                'menu_order' => (int) $c['orden'],
+            ];
+
+            $res = $auth()->put("$api/products/categories/{$wooId}", $payload);
+            if ($res->failed()) {
+                Log::error('Woo update category failed', [
+                    'cliente' => $cliente,
+                    'id' => $wooId,
+                    'payload' => $payload,
+                    'resp' => $res->body()
+                ]);
+                continue;
+            }
+
+            // Mantener coherencia local del parent_id de Woo (opcional)
+            CategoriaSincronizada::where('id', $c['id'])->update([
+                'woocommerce_parent_id' => $parentWoo ?: null,
+            ]);
+        }
+
+        return response()->json(['ok' => true, 'msg' => 'Jerarquía manual aplicada en Woo.']);
+    }
+
+
+
+
+    public function applyManualCategoriesToProducts(string $cliente)
+    {
+        $credWoo = ApiConnector::getCredentials($cliente, 'woocommerce');
+        if (!$credWoo)
+            return response()->json(['error' => 'Credenciales Woo no encontradas'], 404);
+
+        $http = $this->wooClient($credWoo);
+        $api = $http['base'];
+        $auth = $http['withAuth'];
+
+        // 1) Recuperar todos los productos de Woo (paginado)
+        $page = 1;
+        $totalUpdated = 0;
+        do {
+            $resp = $auth()->get("$api/products", ['per_page' => 100, 'page' => $page, 'status' => 'publish']);
+            if ($resp->failed())
+                break;
+            $items = $resp->json();
+            if (!$items)
+                break;
+
+            foreach ($items as $p) {
+                $sku = $p['sku'] ?? null;
+                if (!$sku)
+                    continue;
+
+                // Aquí define tu lookup hacia SiReTT si quieres (por SKU),
+                // o si ya guardaste "familia" localmente, úsala.
+                $familia = $this->resolverFamiliaDesdeTuBD($cliente, $sku); // <-- implementa según tu caso
+                if (!$familia)
+                    continue;
+
+                $wooCatId = $this->resolveWooCategoryId($cliente, $familia);
+                if (!$wooCatId)
+                    continue;
+
+                // Solo actualizar si difiere
+                $hasCat = collect($p['categories'] ?? [])->contains(fn($c) => (int) $c['id'] === $wooCatId);
+                if ($hasCat)
+                    continue;
+
+                $payload = ['categories' => [['id' => $wooCatId]]];
+                $u = $auth()->put("$api/products/{$p['id']}", $payload);
+                if ($u->ok())
+                    $totalUpdated++;
+            }
+
+            $page++;
+        } while (count($items) === 100);
+
+        return response()->json(['ok' => true, 'updated' => $totalUpdated]);
+    }
+
+
+
+
+
+    private function resolverFamiliaDesdeTuBD(string $cliente, string $sku): ?string
+    {
+        $sku = $this->skuKey($sku);
+        if ($sku === '')
+            return null;
+
+        // 1) sirett_items (recomendado)
+        if (Schema::hasTable('sirett_items')) {
+            // intenta columnas comunes: familia, familia_sirett
+            $row = DB::table('sirett_items')
+                ->where('cliente', $cliente)
+                ->where(function ($q) use ($sku) {
+                    $q->where('sku_key', $sku)
+                        ->orWhere('codigo', $sku)
+                        ->orWhere('sku', $sku);
+                })
+                ->select('familia', 'familia_sirett')
+                ->first();
+
+            if ($row) {
+                return $row->familia ?? $row->familia_sirett ?? null;
+            }
+        }
+
+        // 2) Alternativas: si tuvieras otras tablas (ajusta nombres/columnas a tu caso)
+        $alternativas = ['productos_sirett', 'items', 'productos']; // <- cámbialas si usas otras
+        foreach ($alternativas as $tabla) {
+            if (!Schema::hasTable($tabla))
+                continue;
+
+            $row = DB::table($tabla)
+                ->where('cliente', $cliente)
+                ->where(function ($q) use ($sku) {
+                    $q->where('sku', $sku)
+                        ->orWhere('codigo', $sku)
+                        ->orWhere('sku_key', $sku);
+                })
+                ->select('familia', 'familia_sirett', 'categoria', 'family')
+                ->first();
+
+            if ($row) {
+                return $row->familia
+                    ?? $row->familia_sirett
+                    ?? $row->categoria
+                    ?? $row->family
+                    ?? null;
+            }
+        }
+
+        // 3) Fallback: consulta SiReTT y cachea
+        $familia = $this->fetchFamiliaFromSirett($cliente, $sku);
+        if ($familia) {
+            // Cachear en sirett_items para la próxima
+            if (Schema::hasTable('sirett_items')) {
+                DB::table('sirett_items')->updateOrInsert(
+                    ['cliente' => $cliente, 'sku_key' => $sku],
+                    ['familia' => $familia, 'updated_at' => now()]
+                );
+            }
+        }
+
+        return $familia ?: null;
+    }
+
+    // Normaliza un SKU para comparaciones robustas (lower + sin espacios/guiones)
+    private function skuKey(string $raw): string
+    {
+        $s = Str::of($raw)->lower()->trim()->replace([' ', '-', '_', '.'], '');
+        return (string) $s;
+    }
+
+    // Buscar en SiReTT y devolver familia (y opcionalmente cachear)
+    private function fetchFamiliaFromSirett(string $cliente, string $skuKey): ?string
+    {
+        try {
+            $cred = ApiConnector::getCredentials($cliente, 'sirett');
+            if (!$cred)
+                return null;
+
+            $client = new \SoapClient($cred->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
+
+            // Nota: si tuvieras un método SiReTT "por código" úsalo; aquí hacemos uno genérico
+            $params = [
+                'ws_pid' => $cred->user,
+                'ws_passwd' => $cred->password,
+                'bid' => $cred->extra,  // según tu WSDL
+            ];
+
+            // Este método suele traer TODOS los ítems. Si hay uno "por código", cámbialo aquí.
+            $response = $client->__soapCall('wsp_request_items', [$params]);
+
+            $arr = json_decode(json_encode($response), true);
+            $items = $arr['data'] ?? $arr['items'] ?? [];
+
+            // Busca el SKU/código, pero normalizado
+            foreach ($items as $it) {
+                $codigo = $this->skuKey((string) ($it['codigo'] ?? $it['sku'] ?? $it['item_code'] ?? ''));
+                if ($codigo !== '' && $codigo === $skuKey) {
+                    // Campos posibles para familia
+                    return (string) ($it['familia'] ?? $it['Familia'] ?? $it['family'] ?? $it['category'] ?? '');
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('fetchFamiliaFromSirett.fail', ['cliente' => $cliente, 'sku' => $skuKey, 'err' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+
+
+    private function resolveWooCategoryId(string $cliente, ?string $familia): ?int
+    {
+        if (!$familia)
+            return null;
+
+        // Normaliza igual que tu catKey()
+        $key = Str::of($familia)->lower()->slug('-')->toString();
+
+        $cat = CategoriaSincronizada::cliente($cliente)
+            ->where('key_normalized', $key)
+            ->orWhere('slug', $key)
+            ->orWhere('nombre', $familia)
+            ->orderByRaw('CASE WHEN woocommerce_id IS NULL THEN 1 ELSE 0 END') // preferir con woo_id
+            ->first();
+
+        return $cat?->woocommerce_id ? (int) $cat->woocommerce_id : null;
+    }
+
+
+    private function wooClient($credWoo)
+    {
+        $base = rtrim($credWoo->base_url, '/') . '/wp-json/wc/v3';
+        return [
+            'base' => $base,
+            'withAuth' => fn() => Http::withBasicAuth($credWoo->user, $credWoo->password)
+                ->acceptJson()->asJson()->retry(3, 2000)->timeout(30),
+        ];
+    }
+
+    private function catDepth(array $byId, $id): int
+    {
+        $d = 0;
+        $lim = 0;
+        while ($id && ++$lim < 1000) {
+            $p = $byId[$id]['parent_id'] ?? null;
+            if (!$p)
+                break;
+            $id = $p;
+            $d++;
+        }
+        return $d;
+    }
+
+    private function normalizeSlug(?string $slug, string $name): string
+    {
+        $s = $slug ?: Str::slug($name);
+        return substr($s, 0, 190);
+    }
+
+
+
+
+    // Mover nodo (drag & drop): actualiza parent_id y orden
+    public function apiMove(Request $request, string $cliente)
+    {
+        $request->validate([
+            'id' => 'required|integer',
+            'parent' => 'nullable',
+            'position' => 'nullable|integer',
+        ]);
+
+        $id = (int) $request->input('id');
+        $parent = $request->input('parent'); // '#' | id
+        $position = (int) ($request->input('position') ?? 0);
+
+        $node = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+        $newParentId = $parent === '#' ? null : (int) $parent;
+
+        // Validaciones básicas
+        if ($newParentId === $id) {
+            return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
+        }
+
+        if ($newParentId) {
+            $parentNode = CategoriaSincronizada::cliente($cliente)->findOrFail($newParentId);
+
+            // Evitar ciclos: verificar que newParent no sea descendiente del node
+            if ($this->isDescendant($node->id, $newParentId, $cliente)) {
+                return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
+            }
+        }
+
+        DB::transaction(function () use ($node, $newParentId, $position, $cliente) {
+            // Actualizar parent y provisionalmente el orden deseado
+            $node->parent_id = $newParentId;
+            $node->orden = $position;
+            // Mantener coherencia con es_principal si lo usas
+            if ($node->isFillable('es_principal')) {
+                $node->es_principal = $newParentId === null;
+            }
+            $node->save();
+
+            // Reordenar hermanos de ese parent por 'orden'
+            $siblings = CategoriaSincronizada::cliente($cliente)
+                ->where('parent_id', $newParentId)
+                ->where('id', '!=', $node->id)
+                ->orderBy('orden')
+                ->orderBy('nombre')
+                ->get();
+
+            // Reconstruir orden 0..n, insertando $node en $position
+            $list = $siblings->toArray();
+            array_splice($list, $position, 0, [$node->toArray()]);
+            foreach ($list as $idx => $row) {
+                CategoriaSincronizada::where('id', $row['id'])->update(['orden' => $idx]);
+            }
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
+    // Resetear jerarquía manual a la de Woo
+    public function apiResetToWoo(Request $request, string $cliente)
+    {
+        DB::transaction(function () use ($cliente) {
+            // parent_id = id del que coincide con woocommerce_parent_id
+            DB::statement("
+                UPDATE categoria_sincronizadas c
+                LEFT JOIN categoria_sincronizadas p
+                       ON p.woocommerce_id = c.woocommerce_parent_id
+                      AND p.cliente = c.cliente
+                   SET c.parent_id = p.id,
+                       c.orden = 0
+                 WHERE c.cliente = ?
+            ", [$cliente]);
+
+            // es_principal coherente
+            try {
+                DB::statement("
+                    UPDATE categoria_sincronizadas
+                       SET es_principal = IF(parent_id IS NULL, 1, 0)
+                     WHERE cliente = ?
+                ", [$cliente]);
+            } catch (\Throwable $e) {
+                // Ignorar si no existe la columna
+            }
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
+    // ---- helper: detectar ciclos ----
+    private function isDescendant(int $ancestorId, int $possibleDescendantId, string $cliente): bool
+    {
+        $current = CategoriaSincronizada::cliente($cliente)->find($possibleDescendantId);
+        $limit = 0;
+        while ($current && $current->parent_id && $limit < 1000) {
+            if ((int) $current->parent_id === $ancestorId) {
+                return true;
+            }
+            $current = CategoriaSincronizada::cliente($cliente)->find($current->parent_id);
+            $limit++;
+        }
+        return false;
+    }
 
 
 

@@ -17,6 +17,8 @@
     <!-- DataTables -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
 
+
+
     <style>
         :root {
             /* fallback; se recalcula con JS según altura real de la navbar */
@@ -88,7 +90,26 @@
                 display: inline-block;
             }
         }
+
+        /* Quita el background por defecto de jsTree para mostrar iconos de fuente */
+        #catTree .jstree-themeicon {
+            background: none !important;
+        }
+
+        /* Ajustes de tamaño/alineación del ícono */
+        #catTree .jstree-themeicon.bi {
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        /* Un poco de énfasis visual opcional */
+        #catTree .jstree-node.is-master>.jstree-anchor {
+            font-weight: 600;
+        }
     </style>
+
+    <link rel="icon" href="data:,">
+
 </head>
 
 <body>
@@ -108,7 +129,7 @@
 
             <li class="nav-item">
                 <a href="{{ route('sync-history.index') }}"
-                   class="nav-link {{ request()->routeIs('sync-history.index') ? 'active' : '' }}">
+                    class="nav-link {{ request()->routeIs('sync-history.index') ? 'active' : '' }}">
                     <i class="bi bi-clock-history me-2"></i> Historial de Sincronizaciones
                 </a>
             </li>
@@ -116,14 +137,14 @@
             @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
             <li class="nav-item">
                 <a href="{{ route('catsync.index', ['cliente' => $clienteActual]) }}"
-                   class="nav-link {{ request()->routeIs('catsync.index') ? 'active' : '' }}">
+                    class="nav-link {{ request()->routeIs('catsync.index') ? 'active' : '' }}">
                     <i class="bi bi-tags-fill me-2"></i> Categorías Sincronizadas
                 </a>
             </li>
 
             <li class="nav-item">
                 <a href="{{ route('sync-errors.index') }}"
-                   class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
+                    class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i> Errores de Sincronización
                 </a>
             </li>

@@ -52,3 +52,28 @@ Route::post('/admin/categorias-sincronizadas/{cliente}/sincronizar',
 
 
 
+Route::prefix('{cliente}/categorias')->group(function () {
+    // Tabla existente (tu index actual):
+    Route::get('/', [CategoriaSincronizadaController::class, 'index'])->name('categorias.index');
+    // Nueva vista: árbol
+    Route::get('/arbol', [CategoriaSincronizadaController::class, 'tree'])->name('categorias.tree');
+    // Endpoints AJAX para el árbol
+    Route::get('/api/tree', [CategoriaSincronizadaController::class, 'apiTree'])->name('categorias.api.tree');
+    Route::post('/api/move', [CategoriaSincronizadaController::class, 'apiMove'])->name('categorias.api.move');
+    Route::post('/api/reset', [CategoriaSincronizadaController::class, 'apiResetToWoo'])->name('categorias.api.reset');
+});
+
+
+
+
+
+Route::prefix('{cliente}/woocommerce')->group(function () {
+    // Aplicar la jerarquía manual a WooCommerce (crear/actualizar categorías)
+    Route::post('/categories/apply-manual-hierarchy', [CategoriaSincronizadaController::class, 'applyManualHierarchyToWoo'])
+        ->name('woo.categories.applyHierarchy');
+
+    // (Opcional) Reasignar categorías de productos en Woo según tu mapeo manual
+    Route::post('/products/apply-manual-categories', [CategoriaSincronizadaController::class, 'applyManualCategoriesToProducts'])
+        ->name('woo.products.applyManualCategories');
+});
+
