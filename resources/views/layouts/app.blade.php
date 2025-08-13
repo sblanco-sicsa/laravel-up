@@ -110,6 +110,9 @@
 
     <link rel="icon" href="data:,">
 
+    @stack('styles')
+
+
 </head>
 
 <body>

@@ -61,6 +61,8 @@ Route::prefix('{cliente}/categorias')->group(function () {
     Route::get('/api/tree', [CategoriaSincronizadaController::class, 'apiTree'])->name('categorias.api.tree');
     Route::post('/api/move', [CategoriaSincronizadaController::class, 'apiMove'])->name('categorias.api.move');
     Route::post('/api/reset', [CategoriaSincronizadaController::class, 'apiResetToWoo'])->name('categorias.api.reset');
+      
+    Route::post('/api/store', [CategoriaSincronizadaController::class, 'apiStore'])->name('categorias.api.store');
 });
 
 
@@ -69,3 +71,6 @@ Route::post(
     '{cliente}/woocommerce/categories/apply-manual-hierarchy',
     [CategoriaSincronizadaController::class, 'applyManualHierarchyToWoo']
 )->name('woo.categories.applyHierarchy');
+
+
+

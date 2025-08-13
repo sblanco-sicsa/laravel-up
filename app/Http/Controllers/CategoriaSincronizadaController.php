@@ -509,35 +509,37 @@ class CategoriaSincronizadaController extends Controller
     }
 
 
-    public function apiTree(string $cliente)
-    {
-        $cats = CategoriaSincronizada::cliente($cliente)
-            ->orderBy('parent_id')
-            ->orderBy('orden')
-            ->orderBy('nombre')
-            ->get(['id', 'nombre', 'parent_id', 'woocommerce_id']);
+    // public function apiTree(string $cliente)
+    // {
+    //     $cats = CategoriaSincronizada::cliente($cliente)
+    //         ->orderBy('parent_id')
+    //         //->orderBy('orden')
+    //         ->orderBy('nombre', 'asc')
+    //         ->get(['id', 'nombre', 'parent_id', 'woocommerce_id']);
 
-        $data = $cats->map(function ($c) {
-            $isMaster = is_null($c->parent_id);
-            return [
-                'id' => (string) $c->id,
-                'parent' => $isMaster ? '#' : (string) $c->parent_id,
-                'text' => $c->nombre,
-                'type' => $isMaster ? 'master' : 'child',
-                'li_attr' => [
-                    'data-wid' => $c->woocommerce_id,
-                    'class' => $isMaster ? 'is-master' : 'is-child',
-                    'title' => $isMaster ? 'Categoría master' : 'Categoría hija',
-                ],
-            ];
-        })->values();
+    //     $data = $cats->map(function ($c) {
+    //         $isMaster = is_null($c->parent_id);
+    //         return [
+    //             'id' => (string) $c->id,
+    //             'parent' => $isMaster ? '#' : (string) $c->parent_id,
+    //             'text' => $c->nombre,
+    //             'type' => $isMaster ? 'master' : 'child',
+    //             'li_attr' => [
+    //                 'data-wid' => $c->woocommerce_id,
+    //                 'class' => $isMaster ? 'is-master' : 'is-child',
+    //                 'title' => $isMaster ? 'Categoría master' : 'Categoría hija',
+    //             ],
+    //         ];
+    //     })->values();
 
-        return response()->json($data);
-    }
+    //     return response()->json($data);
+    // }
 
 
 
-  
+
+
+
     public function applyManualHierarchyToWoo(string $cliente)
     {
         // 1) Credenciales
@@ -877,63 +879,130 @@ class CategoriaSincronizadaController extends Controller
 
 
     // Mover nodo (drag & drop): actualiza parent_id y orden
-    public function apiMove(Request $request, string $cliente)
-    {
-        $request->validate([
-            'id' => 'required|integer',
-            'parent' => 'nullable',
-            'position' => 'nullable|integer',
-        ]);
+    // public function apiMove(Request $request, string $cliente)
+    // {
+    //     $request->validate([
+    //         'id' => 'required|integer',
+    //         'parent' => 'nullable',
+    //         'position' => 'nullable|integer',
+    //     ]);
 
-        $id = (int) $request->input('id');
-        $parent = $request->input('parent'); // '#' | id
-        $position = (int) ($request->input('position') ?? 0);
+    //     $id = (int) $request->input('id');
+    //     $parent = $request->input('parent'); // '#' | id
+    //     $position = (int) ($request->input('position') ?? 0);
 
-        $node = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
-        $newParentId = $parent === '#' ? null : (int) $parent;
+    //     $node = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+    //     $newParentId = $parent === '#' ? null : (int) $parent;
 
-        // Validaciones básicas
-        if ($newParentId === $id) {
-            return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
-        }
+    //     // Validaciones básicas
+    //     if ($newParentId === $id) {
+    //         return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
+    //     }
 
-        if ($newParentId) {
-            $parentNode = CategoriaSincronizada::cliente($cliente)->findOrFail($newParentId);
+    //     if ($newParentId) {
+    //         $parentNode = CategoriaSincronizada::cliente($cliente)->findOrFail($newParentId);
 
-            // Evitar ciclos: verificar que newParent no sea descendiente del node
-            if ($this->isDescendant($node->id, $newParentId, $cliente)) {
-                return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
-            }
-        }
+    //         // Evitar ciclos: verificar que newParent no sea descendiente del node
+    //         if ($this->isDescendant($node->id, $newParentId, $cliente)) {
+    //             return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
+    //         }
+    //     }
 
-        DB::transaction(function () use ($node, $newParentId, $position, $cliente) {
-            // Actualizar parent y provisionalmente el orden deseado
-            $node->parent_id = $newParentId;
-            $node->orden = $position;
-            // Mantener coherencia con es_principal si lo usas
-            if ($node->isFillable('es_principal')) {
-                $node->es_principal = $newParentId === null;
-            }
-            $node->save();
+    //     DB::transaction(function () use ($node, $newParentId, $position, $cliente) {
+    //         // Actualizar parent y provisionalmente el orden deseado
+    //         $node->parent_id = $newParentId;
+    //         $node->orden = $position;
+    //         // Mantener coherencia con es_principal si lo usas
+    //         if ($node->isFillable('es_principal')) {
+    //             $node->es_principal = $newParentId === null;
+    //         }
+    //         $node->save();
 
-            // Reordenar hermanos de ese parent por 'orden'
-            $siblings = CategoriaSincronizada::cliente($cliente)
-                ->where('parent_id', $newParentId)
-                ->where('id', '!=', $node->id)
-                ->orderBy('orden')
-                ->orderBy('nombre')
-                ->get();
+    //         // Reordenar hermanos de ese parent por 'orden'
+    //         $siblings = CategoriaSincronizada::cliente($cliente)
+    //             ->where('parent_id', $newParentId)
+    //             ->where('id', '!=', $node->id)
+    //             ->orderBy('orden')
+    //             ->orderBy('nombre')
+    //             ->get();
 
-            // Reconstruir orden 0..n, insertando $node en $position
-            $list = $siblings->toArray();
-            array_splice($list, $position, 0, [$node->toArray()]);
-            foreach ($list as $idx => $row) {
-                CategoriaSincronizada::where('id', $row['id'])->update(['orden' => $idx]);
-            }
-        });
+    //         // Reconstruir orden 0..n, insertando $node en $position
+    //         $list = $siblings->toArray();
+    //         array_splice($list, $position, 0, [$node->toArray()]);
+    //         foreach ($list as $idx => $row) {
+    //             CategoriaSincronizada::where('id', $row['id'])->update(['orden' => $idx]);
+    //         }
+    //     });
 
-        return response()->json(['ok' => true]);
-    }
+    //     return response()->json(['ok' => true]);
+    // }
+
+
+
+
+    //     public function apiMove(Request $request, string $cliente)
+// {
+//     $request->validate([
+//         'id'       => 'required|integer',
+//         'parent'   => 'nullable',
+//         'position' => 'nullable|integer',
+//     ]);
+
+    //     $id       = (int) $request->input('id');
+//     $parent   = $request->input('parent'); // '#' | id | null
+//     $position = (int) ($request->input('position') ?? 0);
+
+    //     $node = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+//     $newParentId = ($parent === '#' || $parent === null) ? null : (int) $parent;
+
+    //     if ($newParentId === $id) {
+//         return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
+//     }
+
+    //     if ($newParentId) {
+//         $parentNode = CategoriaSincronizada::cliente($cliente)->findOrFail($newParentId);
+//         if ($this->isDescendant($node->id, $newParentId, $cliente)) {
+//             return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
+//         }
+//     }
+
+    //     DB::transaction(function () use ($node, $newParentId, $position, $cliente) {
+//         // === Guardar jerarquía manual ===
+//         $node->parent_id = $newParentId;
+//         $node->orden     = $position;
+
+    //         // (Opcional) coherencia con es_principal si existe
+//         if ($node->isFillable('es_principal')) {
+//             $node->es_principal = $newParentId === null;
+//         }
+
+    //         // (Opcional) si quieres que al ser MASTER guardes 1 en woocommerce_parent_id
+//         if (Schema::hasColumn('categoria_sincronizadas','woocommerce_parent_id')) {
+//             $node->woocommerce_parent_id = $newParentId ? (int)$newParentId : 1; // <- 1 cuando es master
+//         }
+
+    //         $node->save();
+
+    //         // Reordenar hermanos por 'orden'
+//         $siblings = CategoriaSincronizada::cliente($cliente)
+//             ->where('parent_id', $newParentId)
+//             ->where('id', '!=', $node->id)
+//             ->orderBy('orden')
+//             ->orderBy('nombre')
+//             ->get();
+
+    //         $list = $siblings->toArray();
+//         array_splice($list, $position, 0, [$node->toArray()]);
+//         foreach ($list as $idx => $row) {
+//             CategoriaSincronizada::where('id', $row['id'])->update(['orden' => $idx]);
+//         }
+//     });
+
+    //     return response()->json(['ok' => true]);
+// }
+
+
+
 
     // Resetear jerarquía manual a la de Woo
     public function apiResetToWoo(Request $request, string $cliente)
@@ -979,6 +1048,134 @@ class CategoriaSincronizadaController extends Controller
         }
         return false;
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public function apiTree(string $cliente)
+    {
+        $cats = CategoriaSincronizada::cliente($cliente)
+            ->orderBy('parent_id')
+            ->orderBy('nombre', 'asc')
+            ->get(['id', 'nombre', 'slug', 'parent_id', 'woocommerce_id']);
+
+        $data = $cats->map(function ($c) {
+            $isMaster = is_null($c->parent_id);
+            return [
+                'id' => (string) $c->id,
+                'parent' => $isMaster ? '#' : (string) $c->parent_id,
+                'text' => $c->nombre,
+                'type' => $isMaster ? 'master' : 'child',
+                'li_attr' => [
+                    'data-wid' => $c->woocommerce_id,
+                    'data-slug' => $c->slug,
+                    'class' => $isMaster ? 'is-master' : 'is-child',
+                    'title' => $isMaster ? 'Categoría master' : 'Categoría hija',
+                ],
+            ];
+        })->values();
+
+        return response()->json($data);
+    }
+
+
+
+    private function reindexSiblingsAlphabetically(string $cliente, ?int $parentId): void
+    {
+        $siblings = CategoriaSincronizada::cliente($cliente)
+            ->when(
+                is_null($parentId),
+                fn($q) => $q->whereNull('parent_id'),
+                fn($q) => $q->where('parent_id', $parentId)
+            )
+            ->orderBy('nombre', 'asc')->orderBy('id', 'asc')
+            ->get(['id']);
+
+        foreach ($siblings as $i => $row) {
+            CategoriaSincronizada::where('id', $row->id)->update(['orden' => $i]);
+        }
+    }
+
+
+public function apiMove(Request $request, string $cliente)
+{
+    $request->validate([
+        'id'       => 'required|integer',
+        'parent'   => 'nullable',
+        'position' => 'nullable|integer',
+    ]);
+
+    $id       = (int) $request->input('id');
+    $parent   = $request->input('parent'); // '#', id, o null
+    $node     = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+
+    $oldParentId = $node->parent_id;
+    $newParentId = ($parent === '#' || $parent === null) ? null : (int) $parent;
+
+    if ($newParentId === $id) {
+        return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
+    }
+    if ($newParentId && $this->isDescendant($node->id, $newParentId, $cliente)) {
+        return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
+    }
+
+    DB::transaction(function () use ($node, $oldParentId, $newParentId, $cliente) {
+        $node->parent_id = $newParentId;
+        $node->orden     = 0;
+        if ($node->isFillable('es_principal')) $node->es_principal = $newParentId === null;
+        if (Schema::hasColumn('categoria_sincronizadas','woocommerce_parent_id')) {
+            $node->woocommerce_parent_id = $newParentId ? (int)$newParentId : 1;
+        }
+        $node->save();
+
+        $this->reindexSiblingsAlphabetically($cliente, $newParentId);
+        if ($oldParentId !== $newParentId) $this->reindexSiblingsAlphabetically($cliente, $oldParentId);
+    });
+
+    return response()->json(['ok' => true]);
+}
+
+
+public function apiStore(Request $request, string $cliente)
+{
+    $data = $request->validate([
+        'nombre'    => 'required|string|min:2|max:190',
+        'slug'      => 'nullable|string|max:190',
+        'parent_id' => 'nullable|integer|exists:categoria_sincronizadas,id',
+    ]);
+
+    $nombre    = trim($data['nombre']);
+    $slug      = trim((string)($data['slug'] ?? ''));
+    $parent_id = $data['parent_id'] ?? null;
+
+    if ($slug === '') $slug = Str::slug($nombre);
+
+    // Crear al final; luego reindexamos A-Z
+    $cat = new CategoriaSincronizada();
+    $cat->cliente                 = $cliente;
+    $cat->nombre                  = $nombre;
+    $cat->slug                    = $slug;
+    $cat->parent_id               = $parent_id ?: null;
+    $cat->orden                   = 0;
+    $cat->woocommerce_id          = null;
+    $cat->woocommerce_parent_id   = $parent_id ? (int)$parent_id : 1; // opcional: 1 para masters
+    if ($cat->isFillable('es_principal')) $cat->es_principal = $parent_id ? 0 : 1;
+    $cat->save();
+
+    $this->reindexSiblingsAlphabetically($cliente, $cat->parent_id);
+
+    return response()->json(['ok'=>true, 'id'=>$cat->id]);
+}
 
 
 

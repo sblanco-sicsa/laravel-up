@@ -1,11 +1,6 @@
-@extends('layouts.app') {{-- o el layout que uses --}}
+@extends('layouts.app')
 
 @section('title', 'Categorías (Árbol)')
-
-@php
-  // Incluye dominio + subcarpeta real (ej. https://api.server.../laravel-up/public)
-  $BASE = rtrim(request()->getSchemeAndHttpHost() . request()->getBaseUrl(), '/');
-@endphp
 
 @section('content')
   <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -16,164 +11,414 @@
       <i class="bi bi-diagram-3 me-2"></i>
       Jerarquía de categorías — <span class="text-uppercase">{{ $cliente }}</span>
     </h5>
+
     <div class="d-flex gap-2">
-
       @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
-
       <a href="{{ route('catsync.index', ['cliente' => $clienteActual]) }}" class="btn btn-outline-secondary">
       <i class="bi bi-table me-1"></i> Volver a tabla
       </a>
 
-
-
-
-      <button id="btnExpand" class="btn btn-outline-primary">
+      <button id="btnExpand" type="button" class="btn btn-outline-primary">
       <i class="bi bi-arrows-expand me-1"></i> Expandir todo
       </button>
-      <button id="btnCollapse" class="btn btn-outline-primary">
+      <button id="btnCollapse" type="button" class="btn btn-outline-primary">
       <i class="bi bi-arrows-collapse me-1"></i> Colapsar todo
       </button>
-      <button id="btnReset" class="btn btn-outline-danger">
-      <i class="bi bi-arrow-counterclockwise me-1"></i> Resetear a jerarquía de Woo
+      <button id="btnReset" type="button" class="btn btn-outline-danger">
+      <i class="bi bi-arrow-counterclockwise me-1"></i> Resetear a Woo
       </button>
-      <button id="btnMakeMaster" class="btn btn-success">
+      <button id="btnMakeMaster" type="button" class="btn btn-success">
       <i class="bi bi-arrow-bar-up me-1"></i> Hacer master
       </button>
-      <button id="btnApplyWoo" type="button" class="btn btn-primary">
-      <i class="bi bi-cloud-upload me-1"></i> Aplicar jerarquía en Woo
+      <button id="btnNewCat" type="button" class="btn btn-outline-success">
+      <i class="bi bi-plus-circle me-1"></i> Nueva categoría
       </button>
-
+      <button id="btnApplyWoo" type="button" class="btn btn-primary">
+      <i class="bi bi-cloud-upload me-1"></i> Aplicar en Woo
+      </button>
     </div>
     </div>
 
     <div class="card shadow-sm">
     <div class="card-body">
+      <div class="tree-wrap"> {{-- <-- NUEVO wrapper para aislar estilos --}} <div
+        class="tree-header grid-cols mb-2 fw-semibold small text-muted px-2">
+        <div class="col-name">Nombre</div>
+        <div class="col-woo text-center">Woo ID</div>
+        <div class="col-slug">Slug</div>
+        <div class="col-actions text-center">Acciones</div>
+      </div>
+
       <div id="catTree"></div>
-      <small class="text-muted d-block mt-3">
-      Arrastra para cambiar padre. Soltar en la raíz (área superior) la marca como <strong>Master</strong>.
-      </small>
+    </div>
+    <small class="text-muted d-block mt-3">
+      Arrastra para cambiar padre. Usa ↥ en nodos hijos para volverlos <strong>MASTER</strong>.
+    </small>
+    </div>
+  </div>
+
+
+  </div>
+
+  {{-- Modal nueva categoría --}}
+  <div class="modal fade" id="modalNewCat" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="formNewCat">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Nueva categoría</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2">
+        <label class="form-label small">Nombre</label>
+        <input type="text" class="form-control" name="nombre" required>
+        </div>
+        <div class="mb-2">
+        <label class="form-label small">Slug (opcional)</label>
+        <input type="text" class="form-control" name="slug" placeholder="se-generará-si-se-deja-vacío">
+        </div>
+        <div class="mb-2">
+        <label class="form-label small">Padre</label>
+        <select class="form-select" name="parent_id">
+          <option value="">— MASTER (sin padre) —</option>
+        </select>
+        <div class="form-text">Si hay un nodo seleccionado, se propondrá como padre.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-success" type="submit">
+        <i class="bi bi-check2 me-1"></i> Guardar
+        </button>
+      </div>
+      </form>
     </div>
     </div>
   </div>
 @endsection
 
+
+
 @push('styles')
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.15/dist/themes/default/style.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.15/dist/themes/default/style.min.css">
+<style>
+  /* ======= Paleta y columnas (scoped a .tree-wrap) ======= */
+  .tree-wrap{
+    --tree-bg:        #f6f8fb;   /* fondo suave */
+    --tree-card:      #f9fbfd;   /* header/bandas */
+    --tree-row:       #ffffff;   /* fila */
+    --tree-hover:     #f3f6fb;   /* hover */
+    --tree-border:    #e6e9ef;
+    --indent:         16px;      /* indent por nivel */
+    --row-h:          40px;
+
+    /* columnas (ajústalas si hace falta) */
+    --col-name:       minmax(360px, 1fr);
+    --col-woo:        110px;
+    --col-slug:       280px;
+    --col-actions:    200px;
+  }
+
+  /* fondo más amable dentro del wrapper (no tocamos tu layout) */
+  .tree-wrap { background: var(--tree-bg); padding: .25rem; border-radius: .5rem; }
+
+  .tree-wrap .grid-cols{
+    display: grid;
+    grid-template-columns: var(--col-name) var(--col-woo) var(--col-slug) var(--col-actions);
+    align-items: center;
+    gap: .5rem;
+  }
+
+  .tree-wrap .tree-header{
+    position: sticky; top: 0; z-index: 1;
+    background: var(--tree-card);
+    border: 1px solid var(--tree-border);
+    border-radius: .5rem;
+    height: 36px;
+    display: grid;
+    align-items: center;
+  }
+
+  /* ======= Reseteos jsTree que causaban descuadre ======= */
+  #catTree .jstree-container-ul,
+  #catTree .jstree-children{ margin:0 !important; padding:0 !important; background: none !important; }
+  #catTree .jstree-node{ margin-left:0 !important; background: none !important; }
+  #catTree .jstree-ocl,                          /* triángulo abrir/cerrar */
+  #catTree .jstree-themeicon{ display:none !important; } /* icono sprite */
+
+  /* ======= Fila como “tabla” usando grid ======= */
+  #catTree .jstree-anchor{
+    width: 100%;
+    min-height: var(--row-h);
+    display: grid;
+    grid-template-columns: var(--col-name) var(--col-woo) var(--col-slug) var(--col-actions);
+    gap: .5rem;
+    align-items: center;
+    padding: .25rem .5rem;
+    border: 1px solid var(--tree-border);
+    border-radius: .5rem;
+    background: var(--tree-row);
+    box-shadow: 0 1px 0 rgba(0,0,0,.02);
+  }
+  #catTree .jstree-anchor:hover{ background: var(--tree-hover); }
+  #catTree .jstree-anchor.jstree-clicked{
+    background: rgba(13,110,253,.08);
+    box-shadow: inset 0 0 0 1px rgba(13,110,253,.15);
+  }
+
+  /* celdas */
+  #catTree .cell-name{ display:flex; align-items:center; gap:.4rem; }
+  /* indent visual según nivel (lo seteamos por JS con --depth) */
+  #catTree .cell-name{ padding-left: calc(var(--depth, 0) * var(--indent)); }
+  #catTree .drag-handle{ opacity:.55; cursor:grab; margin-right:.25rem; }
+  #catTree .cell-woo   { text-align:center; }
+  #catTree .cell-slug  { color:#6b7280; font-size:.86rem; }
+  #catTree .cell-actions{ display:flex; justify-content:center; gap:.25rem; }
+  #catTree .cell-actions .btn{ padding:.15rem .4rem; font-size:.70rem; }
+
+  /* badge master */
+  #catTree .badge-master{
+    margin-left:.35rem; font-size:.65rem; font-weight:600;
+    background:rgba(13,110,253,.08); color:#0d6efd; border:1px solid rgba(13,110,253,.25);
+    padding:.1rem .35rem; border-radius:.25rem;
+  }
+
+  /* animación de “encontrado” al mover */
+  #catTree .flash{ animation:flashRow 1.2s ease-out 1; }
+  @keyframes flashRow{
+    0%{ box-shadow:0 0 0 0 rgba(25,135,84,.35); }
+    50%{ box-shadow:0 0 0 .35rem rgba(25,135,84,.12); }
+    100%{ box-shadow:0 0 0 0 rgba(25,135,84,.0); }
+  }
+</style>
 @endpush
+
+
 
 @push('scripts')
   <script src="https://cdn.jsdelivr.net/npm/jstree@3.3.15/dist/jstree.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
-    const BASE = @json($BASE);
-    const cliente = @json($cliente);
-
-    const RUTA_TREE = BASE + @json(route('categorias.api.tree', ['cliente' => $cliente], false));
-    const RUTA_MOVE = BASE + @json(route('categorias.api.move', ['cliente' => $cliente], false));
-    const RUTA_RESET = BASE + @json(route('categorias.api.reset', ['cliente' => $cliente], false));
-
-    console.log({ BASE, RUTA_TREE, RUTA_MOVE, RUTA_RESET }); // 👈 verifica que no estén duplicadas subcarpetas
+    // === RUTAS ===
+    const RUTA_TREE = @json(route('categorias.api.tree', ['cliente' => $cliente]));
+    const RUTA_MOVE = @json(route('categorias.api.move', ['cliente' => $cliente]));
+    const RUTA_RESET = @json(route('categorias.api.reset', ['cliente' => $cliente]));
+    const RUTA_APPLY = @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente]));
+    const RUTA_STORE = @json(route('categorias.api.store', ['cliente' => $cliente]));
 
     const CSRF = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     $.ajaxSetup({ headers: { 'X-CSRF-TOKEN': CSRF } });
 
     const $treeEl = $('#catTree');
 
-    // Init con data como función para capturar errores
-    $treeEl.jstree({
+    const swalLoading = (title = 'Procesando…') =>
+      Swal.fire({ title, allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    const toast = (icon, title) =>
+      Swal.fire({ toast: true, icon, title, position: 'top-end', timer: 1800, showConfirmButton: false });
+
+    // ——— Decorado tipo tabla ———
+
+
+    // Pinta la estructura de celdas
+function decorateRow(inst, nodeId){
+  const node = inst.get_node(nodeId);
+  const $li  = inst.get_node(nodeId, true);
+  if (!$li.length) return;
+  const $a   = $li.children('.jstree-anchor');
+
+  if ($a.find('.cell-name').length) return; // ya decorado
+
+  const rawName = inst.get_text(nodeId);
+  const wid  = ($li.data('wid')  ?? '—');
+  const slug = ($li.data('slug') ?? '—');
+
+  $a.empty();
+
+  const $name = $('<div class="cell-name"></div>');
+  $name.append('<span class="drag-handle" title="Arrastrar"><i class="bi bi-grip-vertical"></i></span>');
+  $name.append('<i class="bi bi-folder2"></i>');
+  $name.append('<span class="text-truncate">'+ rawName +'</span>');
+  $a.append($name);
+
+  $a.append('<div class="cell-woo">'+ wid +'</div>');
+  $a.append('<div class="cell-slug">'+ slug +'</div>');
+  $a.append('<div class="cell-actions"></div>');
+
+  // → indent por profundidad (node.parents incluye '#')
+  const depth = Math.max(0, (node.parents?.length || 1) - 1);
+  $name[0].style.setProperty('--depth', depth);
+}
+
+function renderNodeTools(inst, nodeId) {
+  decorateRow(inst, nodeId);
+
+  const node = inst.get_node(nodeId);
+  const $li  = inst.get_node(nodeId, true);
+  if (!$li.length) return;
+  const $a   = $li.children('.jstree-anchor');
+
+  $a.find('.badge-master').remove();
+  const $actions = $a.find('.cell-actions').empty();
+
+  const isMaster    = (node.parent === '#');
+  const hasChildren = inst.is_parent(node);
+
+  if (isMaster) {
+    $a.find('.cell-name').append('<span class="badge-master">MASTER</span>');
+    if (hasChildren) {
+      $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
+    }
+    return;
+  }
+
+  $actions.append('<button class="btn btn-outline-success btn-xs btn-make-master" title="Convertir en MASTER"><i class="bi bi-arrow-bar-up"></i></button>');
+  if (hasChildren) {
+    $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
+  }
+}
+
+function refreshAllTools(inst) {
+  inst.get_json('#', { flat: true }).forEach(n => {
+    decorateRow(inst, n.id);
+    renderNodeTools(inst, n.id);
+  });
+}
+
+
+
+
+    // ——— jsTree ———
+    $treeEl
+      .jstree({
       core: {
-      check_callback: true,
-      multiple: false,
-      themes: { stripes: true },
-      data: function (node, cb) {
+        check_callback: true,
+        multiple: false,
+        themes: { stripes: true },
+        animation: 120,
+        data: function (_node, cb) {
         $.getJSON(RUTA_TREE)
-        .done(function (resp) {
-          if (!Array.isArray(resp)) {
-          console.error('API TREE no devolvió array:', resp);
-          alert('La API de categorías no devolvió un arreglo JSON.');
-          cb([]); // evita crash
-          return;
-          }
-          cb(resp);
-        })
-        .fail(function (xhr) {
-          console.error('Fallo API TREE', xhr.status, xhr.responseText?.slice(0, 300));
-          alert('No se pudo cargar el árbol de categorías.');
-          cb([]); // evita crash
-        });
-      }
+          .done(resp => Array.isArray(resp) ? cb(resp) : (console.error('TREE no array', resp), cb([])))
+          .fail(xhr => { console.error('TREE fail', xhr.status, xhr.responseText?.slice(0, 200)); cb([]); });
+        }
       },
-      plugins: ['dnd', 'wholerow', 'state', 'types'],
+      dnd: { large_drag_target: true, open_timeout: 150 },
+      plugins: ['dnd','state','types','unique','sort'],
+      sort: function (a, b) { return this.get_text(a).localeCompare(this.get_text(b), 'es', { sensitivity: 'base', numeric: true }); },
       types: {
-      master: { icon: 'bi bi-folder-fill text-primary' },
-      child: { icon: 'bi bi-folder2' },
-      default: { icon: 'bi bi-folder' }
+        master: { icon: 'bi bi-folder-fill text-primary' },
+        child: { icon: 'bi bi-folder2' },
+        default: { icon: 'bi bi-folder' }
       }
-    })
-      .on('error.jstree', function (e, data) {
-      console.error('jsTree error:', data);
+      })
+
+      .on('ready.jstree refresh.jstree redraw.jstree', (e, d) => refreshAllTools(d.instance))
+      .on('after_open.jstree after_close.jstree', (e, d) => { if (d?.node?.id) renderNodeTools(d.instance, d.node.id); })
+      .on('changed.jstree', (e, d) => {
+      const inst = d.instance;
+      if (d?.node?.id) {
+        renderNodeTools(inst, d.node.id);
+        if (d.node.parent && d.node.parent !== '#') renderNodeTools(inst, d.node.parent);
+      }
       })
       .on('move_node.jstree', function (e, data) {
+      const inst = data.instance;
       const nuevoParent = (data.parent === '#') ? null : data.parent;
-      $.post(RUTA_MOVE, {
-        id: data.node.id,
-        parent: nuevoParent,
-        position: data.position
-      })
+
+      $.post(RUTA_MOVE, { id: data.node.id, parent: nuevoParent, position: data.position })
         .done(() => {
-        const inst = $treeEl.jstree(true);
-        const newType = nuevoParent ? 'child' : 'master';
-        inst.set_type(data.node, newType);
+        if (nuevoParent) inst.open_node(nuevoParent);
+        inst.set_type(data.node, nuevoParent ? 'child' : 'master');
+        renderNodeTools(inst, data.node.id);
+        if (nuevoParent) renderNodeTools(inst, nuevoParent);
 
-        const $li = inst.get_node(data.node, true);
-        $li.removeClass('is-master is-child')
-          .addClass(nuevoParent ? 'is-child' : 'is-master')
-          .attr('title', nuevoParent ? 'Categoría hija' : 'Categoría master');
+        inst.deselect_all(); inst.select_node(data.node.id);
+        const $row = inst.get_node(data.node, true);
+        $row.addClass('flash'); setTimeout(() => $row.removeClass('flash'), 1200);
+        $row[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        console.log('Jerarquía actualizada');
+        toast('success', 'Jerarquía actualizada');
         })
-        .fail((xhr) => {
-        alert(xhr.responseJSON?.msg ?? xhr.responseJSON?.error ?? 'No se pudo mover el nodo');
-        $treeEl.jstree(true).refresh(); // revertir
-        });
+        .fail(xhr => { Swal.fire({ icon: 'error', title: 'No se pudo mover', text: xhr.responseJSON?.msg ?? xhr.responseJSON?.error ?? 'Error' }); inst.refresh(); });
       });
 
+    // ——— Acciones globales ———
     $('#btnExpand').on('click', () => $treeEl.jstree('open_all'));
     $('#btnCollapse').on('click', () => $treeEl.jstree('close_all'));
 
-    $('#btnReset').on('click', () => {
-      if (!confirm('¿Seguro que deseas resetear la jerarquía manual a la estructura de Woo?')) return;
-      $.post(RUTA_RESET)
-      .done(() => $treeEl.jstree(true).refresh())
-      .fail((xhr) => alert(xhr.responseJSON?.msg ?? 'No se pudo resetear'));
+    // Toggle fila (delegado)
+    $(document).on('click', '.btn-toggle-node', function (ev) {
+      ev.preventDefault();
+      const inst = $treeEl.jstree(true);
+      const id = $(this).closest('.jstree-node').attr('id'); if (!id) return;
+      inst.is_open(id) ? inst.close_node(id) : inst.open_node(id);
     });
 
-    // Hacer master (mover a raíz)
+    // Hacer MASTER seleccionado
     $('#btnMakeMaster').on('click', () => {
       const inst = $treeEl.jstree(true);
       const sel = inst.get_selected(true);
-      if (!sel.length) { alert('Selecciona una categoría primero.'); return; }
-      if (sel.length > 1) { alert('Selecciona solo una categoría.'); return; }
-      const node = sel[0];
-      if (node.parent === '#') { alert('Esta categoría ya es master.'); return; }
-      inst.move_node(node, '#', 'last'); // dispara move_node y guarda
+      if (sel.length !== 1) return Swal.fire({ icon: 'info', title: 'Selecciona exactamente una categoría.' });
+      const node = sel[0]; if (node.parent === '#') return toast('info', 'Ya es master');
+      inst.move_node(node, '#', 'last');
     });
 
+    // Hacer MASTER por fila
+    $(document).on('click', '.btn-make-master', function (ev) {
+      ev.preventDefault();
+      const inst = $treeEl.jstree(true);
+      const id = $(this).closest('.jstree-node').attr('id'); if (!id) return;
+      const node = inst.get_node(id); if (node.parent === '#') return;
+      inst.move_node(node, '#', 'last');
+    });
 
-    const RUTA_APPLY = @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente]));
-    //const RUTA_APPLY = BASE + @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente], false));
-    console.log({ RUTA_APPLY }); // para verificar que incluye /laravel-up/public
+    // Reset
+    $('#btnReset').on('click', async () => {
+      const ok = await Swal.fire({ icon: 'question', title: 'Resetear jerarquía', html: 'Volverá a la estructura de Woo.', showCancelButton: true, confirmButtonText: 'Sí, resetear', cancelButtonText: 'Cancelar' });
+      if (!ok.isConfirmed) return;
+      swalLoading('Reseteando…');
+      $.post(RUTA_RESET)
+      .done(() => { Swal.close(); $treeEl.jstree(true).refresh(); toast('success', 'Jerarquía reseteada'); })
+      .fail(xhr => { Swal.close(); Swal.fire({ icon: 'error', title: 'Error', text: xhr.responseJSON?.msg ?? 'No se pudo resetear' }); });
+    });
 
-    $('#btnApplyWoo').on('click', (e) => {
-      e.preventDefault();               // <- evita submit/navegación
-      if (!confirm('...')) return;
+    // Aplicar en Woo
+    $('#btnApplyWoo').on('click', async (e) => {
+      e.preventDefault();
+      const ok = await Swal.fire({ icon: 'question', title: 'Aplicar en WooCommerce', html: 'Creará/actualizará categorías según esta jerarquía.', showCancelButton: true, confirmButtonText: 'Sí, aplicar', cancelButtonText: 'Cancelar' });
+      if (!ok.isConfirmed) return;
+      swalLoading('Aplicando en Woo…');
       $.post(RUTA_APPLY)
-      .done(resp => alert(resp?.msg ?? 'Jerarquía aplicada en WooCommerce'))
-      .fail(xhr => alert(xhr.responseJSON?.error ?? xhr.responseJSON?.message ?? 'No se pudo aplicar la jerarquía en Woo'));
+      .done(resp => { Swal.close(); toast('success', resp?.msg ?? 'Listo'); })
+      .fail(xhr => { Swal.close(); Swal.fire({ icon: 'error', title: 'Error', text: xhr.responseJSON?.error ?? xhr.responseJSON?.message ?? 'Fallo al aplicar' }); });
     });
 
+    // ——— Nueva categoría (modal) ———
+    const newCatModal = new bootstrap.Modal(document.getElementById('modalNewCat'));
+    $('#btnNewCat').on('click', () => {
+      // Prefill: padre = seleccionado
+      const inst = $treeEl.jstree(true);
+      const sel = inst.get_selected(true);
+      const $sel = $('select[name="parent_id"]').empty().append('<option value="">— MASTER (sin padre) —</option>');
+      // Cargar opciones rápidas (simple: todos los nodos visibles)
+      inst.get_json('#', { flat: true }).forEach(n => {
+      $sel.append(`<option value="${n.id}">${inst.get_text(n.id)}</option>`);
+      });
+      if (sel.length === 1) $sel.val(sel[0].id);
 
+      $('#formNewCat')[0].reset();
+      newCatModal.show();
+    });
 
+    $('#formNewCat').on('submit', function (e) {
+      e.preventDefault();
+      const payload = Object.fromEntries(new FormData(this).entries());
+      swalLoading('Creando categoría…');
+      $.post(RUTA_STORE, payload)
+      .done(() => { Swal.close(); newCatModal.hide(); $treeEl.jstree(true).refresh(); toast('success', 'Categoría creada'); })
+      .fail(xhr => { Swal.close(); Swal.fire({ icon: 'error', title: 'No se pudo crear', text: xhr.responseJSON?.message ?? 'Error' }); });
+    });
     });
   </script>
 @endpush
