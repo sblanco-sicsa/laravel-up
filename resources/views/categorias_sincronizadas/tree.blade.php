@@ -41,7 +41,7 @@
 
     <div class="card shadow-sm">
     <div class="card-body">
-      <div class="tree-wrap"> {{-- <-- NUEVO wrapper para aislar estilos --}} <div
+      <div class="tree-wrap"> {{-- <-- wrapper para aislar estilos --}} <div
         class="tree-header grid-cols mb-2 fw-semibold small text-muted px-2">
         <div class="col-name">Nombre</div>
         <div class="col-woo text-center">Woo ID</div>
@@ -51,6 +51,7 @@
 
       <div id="catTree"></div>
     </div>
+
     <small class="text-muted d-block mt-3">
       Arrastra para cambiar padre. Usa ↥ en nodos hijos para volverlos <strong>MASTER</strong>.
     </small>
@@ -58,7 +59,11 @@
   </div>
 
 
+
   </div>
+
+
+
 
   {{-- Modal nueva categoría --}}
   <div class="modal fade" id="modalNewCat" tabindex="-1" aria-hidden="true">
@@ -101,54 +106,82 @@
 
 
 @push('styles')
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.15/dist/themes/default/style.min.css">
-<style>
-  /* ======= Paleta y columnas (scoped a .tree-wrap) ======= */
-  .tree-wrap{
-    --tree-bg:        #f6f8fb;   /* fondo suave */
-    --tree-card:      #f9fbfd;   /* header/bandas */
-    --tree-row:       #ffffff;   /* fila */
-    --tree-hover:     #f3f6fb;   /* hover */
-    --tree-border:    #e6e9ef;
-    --indent:         16px;      /* indent por nivel */
-    --row-h:          40px;
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jstree@3.3.15/dist/themes/default/style.min.css">
+  <style>
+    /* ======= Paleta y columnas (scoped a .tree-wrap) ======= */
+    .tree-wrap {
+    /* Fondo general suave */
+    --tree-bg: #f6f8fb;
+    --tree-card: #f9fbfd;
+    --tree-border: #e6e9ef;
+    --tree-hover: #f3f6fb;
 
-    /* columnas (ajústalas si hace falta) */
-    --col-name:       minmax(360px, 1fr);
-    --col-woo:        110px;
-    --col-slug:       280px;
-    --col-actions:    200px;
-  }
+    /* Tono base (azul) para filas por nivel */
+    --row-hue: 221;
+    --row-sat: 88%;
+    --row-master: hsl(var(--row-hue) var(--row-sat) 96%);
+    /* nivel 0 */
+    --row-child-1: hsl(var(--row-hue) calc(var(--row-sat) - 15%) 97.5%);
+    /* nivel 1 */
+    --row-child-2: hsl(var(--row-hue) calc(var(--row-sat) - 25%) 98.5%);
+    /* nivel 2 */
+    --row-child-3: hsl(var(--row-hue) calc(var(--row-sat) - 35%) 99.2%);
+    /* nivel 3+ */
 
-  /* fondo más amable dentro del wrapper (no tocamos tu layout) */
-  .tree-wrap { background: var(--tree-bg); padding: .25rem; border-radius: .5rem; }
+    --indent: 16px;
+    /* indent por nivel */
+    --row-h: 40px;
 
-  .tree-wrap .grid-cols{
+    /* columnas desktop por defecto */
+    --col-name: minmax(360px, 1fr);
+    --col-woo: 110px;
+    --col-slug: 280px;
+    --col-actions: 200px;
+
+    background: var(--tree-bg);
+    padding: .25rem;
+    border-radius: .5rem;
+    }
+
+    .tree-wrap .grid-cols {
     display: grid;
     grid-template-columns: var(--col-name) var(--col-woo) var(--col-slug) var(--col-actions);
     align-items: center;
     gap: .5rem;
-  }
+    }
 
-  .tree-wrap .tree-header{
-    position: sticky; top: 0; z-index: 1;
+    .tree-wrap .tree-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     background: var(--tree-card);
     border: 1px solid var(--tree-border);
     border-radius: .5rem;
     height: 36px;
     display: grid;
     align-items: center;
-  }
+    }
 
-  /* ======= Reseteos jsTree que causaban descuadre ======= */
-  #catTree .jstree-container-ul,
-  #catTree .jstree-children{ margin:0 !important; padding:0 !important; background: none !important; }
-  #catTree .jstree-node{ margin-left:0 !important; background: none !important; }
-  #catTree .jstree-ocl,                          /* triángulo abrir/cerrar */
-  #catTree .jstree-themeicon{ display:none !important; } /* icono sprite */
+    /* ======= Reseteos jsTree ======= */
+    #catTree .jstree-container-ul,
+    #catTree .jstree-children {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: none !important;
+    }
 
-  /* ======= Fila como “tabla” usando grid ======= */
-  #catTree .jstree-anchor{
+    #catTree .jstree-node {
+    margin-left: 0 !important;
+    background: none !important;
+    }
+
+    #catTree .jstree-ocl,
+    #catTree .jstree-themeicon {
+    display: none !important;
+    }
+
+    /* ======= Fila tipo “tabla” con grid ======= */
+    #catTree .jstree-anchor {
     width: 100%;
     min-height: var(--row-h);
     display: grid;
@@ -158,41 +191,153 @@
     padding: .25rem .5rem;
     border: 1px solid var(--tree-border);
     border-radius: .5rem;
-    background: var(--tree-row);
-    box-shadow: 0 1px 0 rgba(0,0,0,.02);
-  }
-  #catTree .jstree-anchor:hover{ background: var(--tree-hover); }
-  #catTree .jstree-anchor.jstree-clicked{
-    background: rgba(13,110,253,.08);
-    box-shadow: inset 0 0 0 1px rgba(13,110,253,.15);
-  }
+    background: #fff;
+    /* se sobreescribe por nivel abajo */
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .02);
+    }
 
-  /* celdas */
-  #catTree .cell-name{ display:flex; align-items:center; gap:.4rem; }
-  /* indent visual según nivel (lo seteamos por JS con --depth) */
-  #catTree .cell-name{ padding-left: calc(var(--depth, 0) * var(--indent)); }
-  #catTree .drag-handle{ opacity:.55; cursor:grab; margin-right:.25rem; }
-  #catTree .cell-woo   { text-align:center; }
-  #catTree .cell-slug  { color:#6b7280; font-size:.86rem; }
-  #catTree .cell-actions{ display:flex; justify-content:center; gap:.25rem; }
-  #catTree .cell-actions .btn{ padding:.15rem .4rem; font-size:.70rem; }
+    #catTree .jstree-anchor:hover {
+    background: var(--tree-hover);
+    }
 
-  /* badge master */
-  #catTree .badge-master{
-    margin-left:.35rem; font-size:.65rem; font-weight:600;
-    background:rgba(13,110,253,.08); color:#0d6efd; border:1px solid rgba(13,110,253,.25);
-    padding:.1rem .35rem; border-radius:.25rem;
-  }
+    #catTree .jstree-anchor.jstree-clicked {
+    background: rgba(13, 110, 253, .08);
+    box-shadow: inset 0 0 0 1px rgba(13, 110, 253, .15);
+    }
 
-  /* animación de “encontrado” al mover */
-  #catTree .flash{ animation:flashRow 1.2s ease-out 1; }
-  @keyframes flashRow{
-    0%{ box-shadow:0 0 0 0 rgba(25,135,84,.35); }
-    50%{ box-shadow:0 0 0 .35rem rgba(25,135,84,.12); }
-    100%{ box-shadow:0 0 0 0 rgba(25,135,84,.0); }
-  }
-</style>
+    /* Fondo por nivel (lo seteamos via data-depth en <li>) */
+    #catTree li[data-depth="0"]>.jstree-anchor {
+    background: var(--row-master);
+    }
+
+    #catTree li[data-depth="1"]>.jstree-anchor {
+    background: var(--row-child-1);
+    }
+
+    #catTree li[data-depth="2"]>.jstree-anchor {
+    background: var(--row-child-2);
+    }
+
+    #catTree li[data-depth="3"]>.jstree-anchor,
+    #catTree li[data-depth="4"]>.jstree-anchor,
+    #catTree li[data-depth="5"]>.jstree-anchor {
+    background: var(--row-child-3);
+    }
+
+    /* celdas */
+    #catTree .cell-name {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    }
+
+    /* indent visual según nivel (JS define --depth) */
+    #catTree .cell-name {
+    padding-left: calc(var(--depth, 0) * var(--indent));
+    }
+
+    #catTree .drag-handle {
+    opacity: .55;
+    cursor: grab;
+    margin-right: .25rem;
+    }
+
+    #catTree .cell-woo {
+    text-align: center;
+    }
+
+    #catTree .cell-slug {
+    color: #6b7280;
+    font-size: .86rem;
+    }
+
+    #catTree .cell-actions {
+    display: flex;
+    justify-content: center;
+    gap: .25rem;
+    }
+
+    #catTree .cell-actions .btn {
+    padding: .15rem .4rem;
+    font-size: .70rem;
+    }
+
+    /* badge master */
+    #catTree .badge-master {
+    margin-left: .35rem;
+    font-size: .65rem;
+    font-weight: 600;
+    background: rgba(13, 110, 253, .08);
+    color: #0d6efd;
+    border: 1px solid rgba(13, 110, 253, .25);
+    padding: .1rem .35rem;
+    border-radius: .25rem;
+    }
+
+    /* animación de “encontrado” al mover */
+    #catTree .flash {
+    animation: flashRow 1.2s ease-out 1;
+    }
+
+    @keyframes flashRow {
+    0% {
+      box-shadow: 0 0 0 0 rgba(25, 135, 84, .35);
+    }
+
+    50% {
+      box-shadow: 0 0 0 .35rem rgba(25, 135, 84, .12);
+    }
+
+    100% {
+      box-shadow: 0 0 0 0 rgba(25, 135, 84, .0);
+    }
+    }
+
+    /* ======= Responsive ======= */
+    /* md: ajusta anchos */
+    @media (max-width: 992px) {
+    .tree-wrap {
+      --col-name: minmax(260px, 1fr);
+      --col-slug: 220px;
+      --col-actions: 170px;
+      --indent: 14px;
+    }
+    }
+
+    /* sm: solo mostramos Nombre + Acciones (Woo ID y Slug se ocultan) */
+    @media (max-width: 768px) {
+    .tree-wrap {
+      --col-name: 1fr;
+      --col-actions: 140px;
+      --indent: 12px;
+    }
+
+    .tree-wrap .grid-cols {
+      grid-template-columns: var(--col-name) var(--col-actions);
+    }
+
+    .tree-wrap .grid-cols .col-woo,
+    .tree-wrap .grid-cols .col-slug {
+      display: none;
+    }
+
+    #catTree .jstree-anchor {
+      grid-template-columns: var(--col-name) var(--col-actions);
+    }
+
+    #catTree .cell-woo,
+    #catTree .cell-slug {
+      display: none;
+    }
+
+    #catTree .cell-actions .btn {
+      padding: .2rem .45rem;
+      font-size: .75rem;
+    }
+    }
+  </style>
 @endpush
+
 
 
 
@@ -222,69 +367,72 @@
 
 
     // Pinta la estructura de celdas
-function decorateRow(inst, nodeId){
-  const node = inst.get_node(nodeId);
-  const $li  = inst.get_node(nodeId, true);
-  if (!$li.length) return;
-  const $a   = $li.children('.jstree-anchor');
+    function decorateRow(inst, nodeId) {
+      const node = inst.get_node(nodeId);
+      const $li = inst.get_node(nodeId, true);
+      if (!$li.length) return;
+      const $a = $li.children('.jstree-anchor');
 
-  if ($a.find('.cell-name').length) return; // ya decorado
+      if ($a.find('.cell-name').length) return; // ya decorado
 
-  const rawName = inst.get_text(nodeId);
-  const wid  = ($li.data('wid')  ?? '—');
-  const slug = ($li.data('slug') ?? '—');
+      const rawName = inst.get_text(nodeId);
+      const wid = ($li.data('wid') ?? '—');
+      const slug = ($li.data('slug') ?? '—');
 
-  $a.empty();
+      $a.empty();
 
-  const $name = $('<div class="cell-name"></div>');
-  $name.append('<span class="drag-handle" title="Arrastrar"><i class="bi bi-grip-vertical"></i></span>');
-  $name.append('<i class="bi bi-folder2"></i>');
-  $name.append('<span class="text-truncate">'+ rawName +'</span>');
-  $a.append($name);
+      const $name = $('<div class="cell-name"></div>');
+      $name.append('<span class="drag-handle" title="Arrastrar"><i class="bi bi-grip-vertical"></i></span>');
+      $name.append('<i class="bi bi-folder2"></i>');
+      $name.append('<span class="text-truncate">' + rawName + '</span>');
+      $a.append($name);
 
-  $a.append('<div class="cell-woo">'+ wid +'</div>');
-  $a.append('<div class="cell-slug">'+ slug +'</div>');
-  $a.append('<div class="cell-actions"></div>');
+      $a.append('<div class="cell-woo">' + wid + '</div>');
+      $a.append('<div class="cell-slug">' + slug + '</div>');
+      $a.append('<div class="cell-actions"></div>');
 
-  // → indent por profundidad (node.parents incluye '#')
-  const depth = Math.max(0, (node.parents?.length || 1) - 1);
-  $name[0].style.setProperty('--depth', depth);
-}
+      // → indent por profundidad (node.parents incluye '#')
+      const depth = Math.max(0, (node.parents?.length || 1) - 1);
+      $name[0].style.setProperty('--depth', depth);
 
-function renderNodeTools(inst, nodeId) {
-  decorateRow(inst, nodeId);
-
-  const node = inst.get_node(nodeId);
-  const $li  = inst.get_node(nodeId, true);
-  if (!$li.length) return;
-  const $a   = $li.children('.jstree-anchor');
-
-  $a.find('.badge-master').remove();
-  const $actions = $a.find('.cell-actions').empty();
-
-  const isMaster    = (node.parent === '#');
-  const hasChildren = inst.is_parent(node);
-
-  if (isMaster) {
-    $a.find('.cell-name').append('<span class="badge-master">MASTER</span>');
-    if (hasChildren) {
-      $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
+      // Fondo por nivel: lo usamos en CSS
+      $li.attr('data-depth', depth);
     }
-    return;
-  }
 
-  $actions.append('<button class="btn btn-outline-success btn-xs btn-make-master" title="Convertir en MASTER"><i class="bi bi-arrow-bar-up"></i></button>');
-  if (hasChildren) {
-    $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
-  }
-}
+    function renderNodeTools(inst, nodeId) {
+      decorateRow(inst, nodeId);
 
-function refreshAllTools(inst) {
-  inst.get_json('#', { flat: true }).forEach(n => {
-    decorateRow(inst, n.id);
-    renderNodeTools(inst, n.id);
-  });
-}
+      const node = inst.get_node(nodeId);
+      const $li = inst.get_node(nodeId, true);
+      if (!$li.length) return;
+      const $a = $li.children('.jstree-anchor');
+
+      $a.find('.badge-master').remove();
+      const $actions = $a.find('.cell-actions').empty();
+
+      const isMaster = (node.parent === '#');
+      const hasChildren = inst.is_parent(node);
+
+      if (isMaster) {
+      $a.find('.cell-name').append('<span class="badge-master">MASTER</span>');
+      if (hasChildren) {
+        $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
+      }
+      return;
+      }
+
+      $actions.append('<button class="btn btn-outline-success btn-xs btn-make-master" title="Convertir en MASTER"><i class="bi bi-arrow-bar-up"></i></button>');
+      if (hasChildren) {
+      $actions.append('<button class="btn btn-outline-secondary btn-xs btn-toggle-node" title="Expandir/contraer"><i class="bi bi-caret-down-fill"></i></button>');
+      }
+    }
+
+    function refreshAllTools(inst) {
+      inst.get_json('#', { flat: true }).forEach(n => {
+      decorateRow(inst, n.id);
+      renderNodeTools(inst, n.id);
+      });
+    }
 
 
 
@@ -295,7 +443,7 @@ function refreshAllTools(inst) {
       core: {
         check_callback: true,
         multiple: false,
-        themes: { stripes: true },
+        themes: { stripes: false },
         animation: 120,
         data: function (_node, cb) {
         $.getJSON(RUTA_TREE)
@@ -304,7 +452,7 @@ function refreshAllTools(inst) {
         }
       },
       dnd: { large_drag_target: true, open_timeout: 150 },
-      plugins: ['dnd','state','types','unique','sort'],
+      plugins: ['dnd', 'state', 'types', 'unique', 'sort'],
       sort: function (a, b) { return this.get_text(a).localeCompare(this.get_text(b), 'es', { sensitivity: 'base', numeric: true }); },
       types: {
         master: { icon: 'bi bi-folder-fill text-primary' },
