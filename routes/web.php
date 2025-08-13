@@ -46,31 +46,31 @@ Route::delete('/admin/categorias-sincronizadas/{cliente}/{wooId}', [CategoriaSin
 
 
 
-Route::post('/admin/categorias-sincronizadas/{cliente}/sincronizar',
+Route::post(
+    '/admin/categorias-sincronizadas/{cliente}/sincronizar',
     [CategoriaSincronizadaController::class, 'syncNow']
 )->name('catsync.syncNow');
 
 
 
 Route::prefix('{cliente}/categorias')->group(function () {
-    // Tabla existente (tu index actual):
+    // Vistas
     Route::get('/', [CategoriaSincronizadaController::class, 'index'])->name('categorias.index');
-    // Nueva vista: árbol
     Route::get('/arbol', [CategoriaSincronizadaController::class, 'tree'])->name('categorias.tree');
-    // Endpoints AJAX para el árbol
+
+    // API árbol
     Route::get('/api/tree', [CategoriaSincronizadaController::class, 'apiTree'])->name('categorias.api.tree');
     Route::post('/api/move', [CategoriaSincronizadaController::class, 'apiMove'])->name('categorias.api.move');
     Route::post('/api/reset', [CategoriaSincronizadaController::class, 'apiResetToWoo'])->name('categorias.api.reset');
-      
     Route::post('/api/store', [CategoriaSincronizadaController::class, 'apiStore'])->name('categorias.api.store');
+
+    // ✅ Borrado por POST (body: {id}) — este es el ÚNICO delete
+    Route::post('/api/delete', [CategoriaSincronizadaController::class, 'apiDelete'])
+        ->name('categorias.api.delete');
 });
 
-
-
+// Aplicar jerarquía manual a Woo
 Route::post(
     '{cliente}/woocommerce/categories/apply-manual-hierarchy',
     [CategoriaSincronizadaController::class, 'applyManualHierarchyToWoo']
 )->name('woo.categories.applyHierarchy');
-
-
-

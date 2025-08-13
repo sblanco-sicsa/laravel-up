@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Http\JsonResponse;
 
 
 class CategoriaSincronizadaController extends Controller
@@ -1053,24 +1054,19 @@ class CategoriaSincronizadaController extends Controller
 
 
 
-
-
-
-
-
-
-
-
-
     public function apiTree(string $cliente)
     {
         $cats = CategoriaSincronizada::cliente($cliente)
             ->orderBy('parent_id')
-            ->orderBy('nombre', 'asc')
-            ->get(['id', 'nombre', 'slug', 'parent_id', 'woocommerce_id']);
+            ->orderBy('orden')
+            ->orderBy('nombre')
+            ->get(['id', 'nombre', 'slug', 'parent_id', 'woocommerce_id', 'respuesta']);
 
         $data = $cats->map(function ($c) {
+            $resp = is_array($c->respuesta) ? $c->respuesta : (json_decode($c->respuesta ?? '[]', true) ?: []);
+            $count = (int) ($resp['count'] ?? 0);
             $isMaster = is_null($c->parent_id);
+
             return [
                 'id' => (string) $c->id,
                 'parent' => $isMaster ? '#' : (string) $c->parent_id,
@@ -1079,6 +1075,7 @@ class CategoriaSincronizadaController extends Controller
                 'li_attr' => [
                     'data-wid' => $c->woocommerce_id,
                     'data-slug' => $c->slug,
+                    'data-count' => $count,
                     'class' => $isMaster ? 'is-master' : 'is-child',
                     'title' => $isMaster ? 'Categoría master' : 'Categoría hija',
                 ],
@@ -1086,6 +1083,109 @@ class CategoriaSincronizadaController extends Controller
         })->values();
 
         return response()->json($data);
+    }
+
+
+    public function apiDelete(Request $request, string $cliente): JsonResponse
+    {
+        // Acepta "123", "cat_123", "j1_9", etc. y extrae solo dígitos
+        $raw = (string) $request->input('id', '');
+        $id = (int) preg_replace('/\D+/', '', $raw);
+
+        if ($id <= 0) {
+            return response()->json([
+                'message' => 'ID inválido o no recibido.',
+                'errors' => ['id' => ['El id es obligatorio y debe ser numérico.']],
+            ], 422);
+        }
+
+        $row = CategoriaSincronizada::where('cliente', $cliente)->findOrFail($id);
+
+        $hasChildren = CategoriaSincronizada::where('cliente', $cliente)
+            ->where('woocommerce_parent_id', $row->woocommerce_id)
+            ->exists();
+        if ($hasChildren) {
+            return response()->json([
+                'message' => 'No se puede eliminar: la categoría tiene subcategorías.',
+            ], 422);
+        }
+
+        $count = (int) data_get($row, 'respuesta.count', 0);
+        if ($count > 0) {
+            return response()->json([
+                'message' => 'No se puede eliminar: la categoría tiene productos asociados.',
+            ], 422);
+        }
+
+        $row->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+
+    public function deleteFromTree(Request $request, string $cliente)
+    {
+        $id = (int) $request->input('id');
+        $row = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+
+        // count desde respuesta (Woo)
+        $resp = is_array($row->respuesta) ? $row->respuesta : (json_decode($row->respuesta ?? '[]', true) ?: []);
+        $count = (int) ($resp['count'] ?? 0);
+        if ($count > 0) {
+            return response()->json(['ok' => false, 'msg' => 'No se puede eliminar: tiene productos asociados'], 422);
+        }
+
+        // no permitir si tiene hijos locales
+        $tieneHijos = CategoriaSincronizada::cliente($cliente)->where('parent_id', $row->id)->exists();
+        if ($tieneHijos) {
+            return response()->json(['ok' => false, 'msg' => 'No se puede eliminar: tiene subcategorías'], 422);
+        }
+
+        // Si existe en Woo, reutiliza el flujo robusto que ya tienes
+        if ($row->woocommerce_id) {
+            $resp = $this->deleteOne($cliente, (int) $row->woocommerce_id);
+            $payload = $resp->getData(true);
+            if (($payload['ok'] ?? false) !== true) {
+                return response()->json([
+                    'ok' => false,
+                    'msg' => $payload['msg'] ?? 'Error al eliminar en Woo',
+                    'det' => $payload['det'] ?? null,
+                ], 500);
+            }
+            // Asegura borrar el registro local si quedara huérfano
+            CategoriaSincronizada::cliente($cliente)->where('id', $row->id)->delete();
+
+            return response()->json(['ok' => true, 'deleted' => ['local_id' => $row->id, 'woo_id' => $row->woocommerce_id]]);
+        }
+
+        // Solo local
+        $row->delete();
+        return response()->json(['ok' => true, 'deleted' => ['local_id' => $id]]);
+    }
+    public function destroy(string $cliente, int $id): JsonResponse
+    {
+        $row = CategoriaSincronizada::where('cliente', $cliente)->findOrFail($id);
+
+        // No borrar si tiene subcategorías:
+        $hasChildren = CategoriaSincronizada::where('cliente', $cliente)
+            ->where('woocommerce_parent_id', $row->woocommerce_id)
+            ->exists();
+        if ($hasChildren) {
+            return response()->json([
+                'message' => 'No se puede eliminar: la categoría tiene subcategorías.',
+            ], 422);
+        }
+
+        // No borrar si tiene productos (si guardas el conteo en respuesta->count)
+        $count = (int) data_get($row, 'respuesta.count', 0);
+        if ($count > 0) {
+            return response()->json([
+                'message' => 'No se puede eliminar: la categoría tiene productos asociados.',
+            ], 422);
+        }
+
+        $row->delete();
+        return response()->json(['ok' => true]);
     }
 
 
@@ -1107,75 +1207,79 @@ class CategoriaSincronizadaController extends Controller
     }
 
 
-public function apiMove(Request $request, string $cliente)
-{
-    $request->validate([
-        'id'       => 'required|integer',
-        'parent'   => 'nullable',
-        'position' => 'nullable|integer',
-    ]);
+    public function apiMove(Request $request, string $cliente)
+    {
+        $request->validate([
+            'id' => 'required|integer',
+            'parent' => 'nullable',
+            'position' => 'nullable|integer',
+        ]);
 
-    $id       = (int) $request->input('id');
-    $parent   = $request->input('parent'); // '#', id, o null
-    $node     = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
+        $id = (int) $request->input('id');
+        $parent = $request->input('parent'); // '#', id, o null
+        $node = CategoriaSincronizada::cliente($cliente)->findOrFail($id);
 
-    $oldParentId = $node->parent_id;
-    $newParentId = ($parent === '#' || $parent === null) ? null : (int) $parent;
+        $oldParentId = $node->parent_id;
+        $newParentId = ($parent === '#' || $parent === null) ? null : (int) $parent;
 
-    if ($newParentId === $id) {
-        return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
-    }
-    if ($newParentId && $this->isDescendant($node->id, $newParentId, $cliente)) {
-        return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
-    }
-
-    DB::transaction(function () use ($node, $oldParentId, $newParentId, $cliente) {
-        $node->parent_id = $newParentId;
-        $node->orden     = 0;
-        if ($node->isFillable('es_principal')) $node->es_principal = $newParentId === null;
-        if (Schema::hasColumn('categoria_sincronizadas','woocommerce_parent_id')) {
-            $node->woocommerce_parent_id = $newParentId ? (int)$newParentId : 1;
+        if ($newParentId === $id) {
+            return response()->json(['error' => 'Una categoría no puede ser su propio padre.'], 422);
         }
-        $node->save();
+        if ($newParentId && $this->isDescendant($node->id, $newParentId, $cliente)) {
+            return response()->json(['error' => 'No puedes mover una categoría dentro de un descendiente.'], 422);
+        }
 
-        $this->reindexSiblingsAlphabetically($cliente, $newParentId);
-        if ($oldParentId !== $newParentId) $this->reindexSiblingsAlphabetically($cliente, $oldParentId);
-    });
+        DB::transaction(function () use ($node, $oldParentId, $newParentId, $cliente) {
+            $node->parent_id = $newParentId;
+            $node->orden = 0;
+            if ($node->isFillable('es_principal'))
+                $node->es_principal = $newParentId === null;
+            if (Schema::hasColumn('categoria_sincronizadas', 'woocommerce_parent_id')) {
+                $node->woocommerce_parent_id = $newParentId ? (int) $newParentId : 1;
+            }
+            $node->save();
 
-    return response()->json(['ok' => true]);
-}
+            $this->reindexSiblingsAlphabetically($cliente, $newParentId);
+            if ($oldParentId !== $newParentId)
+                $this->reindexSiblingsAlphabetically($cliente, $oldParentId);
+        });
+
+        return response()->json(['ok' => true]);
+    }
 
 
-public function apiStore(Request $request, string $cliente)
-{
-    $data = $request->validate([
-        'nombre'    => 'required|string|min:2|max:190',
-        'slug'      => 'nullable|string|max:190',
-        'parent_id' => 'nullable|integer|exists:categoria_sincronizadas,id',
-    ]);
+    public function apiStore(Request $request, string $cliente)
+    {
+        $data = $request->validate([
+            'nombre' => 'required|string|min:2|max:190',
+            'slug' => 'nullable|string|max:190',
+            'parent_id' => 'nullable|integer|exists:categoria_sincronizadas,id',
+        ]);
 
-    $nombre    = trim($data['nombre']);
-    $slug      = trim((string)($data['slug'] ?? ''));
-    $parent_id = $data['parent_id'] ?? null;
+        $nombre = trim($data['nombre']);
+        $slug = trim((string) ($data['slug'] ?? ''));
+        $parent_id = $data['parent_id'] ?? null;
 
-    if ($slug === '') $slug = Str::slug($nombre);
+        if ($slug === '')
+            $slug = Str::slug($nombre);
 
-    // Crear al final; luego reindexamos A-Z
-    $cat = new CategoriaSincronizada();
-    $cat->cliente                 = $cliente;
-    $cat->nombre                  = $nombre;
-    $cat->slug                    = $slug;
-    $cat->parent_id               = $parent_id ?: null;
-    $cat->orden                   = 0;
-    $cat->woocommerce_id          = null;
-    $cat->woocommerce_parent_id   = $parent_id ? (int)$parent_id : 1; // opcional: 1 para masters
-    if ($cat->isFillable('es_principal')) $cat->es_principal = $parent_id ? 0 : 1;
-    $cat->save();
+        // Crear al final; luego reindexamos A-Z
+        $cat = new CategoriaSincronizada();
+        $cat->cliente = $cliente;
+        $cat->nombre = $nombre;
+        $cat->slug = $slug;
+        $cat->parent_id = $parent_id ?: null;
+        $cat->orden = 0;
+        $cat->woocommerce_id = null;
+        $cat->woocommerce_parent_id = $parent_id ? (int) $parent_id : 1; // opcional: 1 para masters
+        if ($cat->isFillable('es_principal'))
+            $cat->es_principal = $parent_id ? 0 : 1;
+        $cat->save();
 
-    $this->reindexSiblingsAlphabetically($cliente, $cat->parent_id);
+        $this->reindexSiblingsAlphabetically($cliente, $cat->parent_id);
 
-    return response()->json(['ok'=>true, 'id'=>$cat->id]);
-}
+        return response()->json(['ok' => true, 'id' => $cat->id]);
+    }
 
 
 
