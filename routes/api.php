@@ -6,6 +6,7 @@ use App\Http\Controllers\ApiTestController;
 Route::middleware('auth.api')->group(function () {
     Route::get('/{cliente}/woocommerce', [ApiTestController::class, 'woocommerce']);
     Route::get('/{cliente}/sirett', [ApiTestController::class, 'sirett']);
+    Route::get('/{cliente}/sirett_promo', [ApiTestController::class, 'sirett_promo']);
 
     Route::get('/{cliente}/sirett/filtrado', [ApiTestController::class, 'sirettFiltrado']);
 

@@ -1144,7 +1144,7 @@ class ApiTestController extends Controller
 
 
 
-    // Helper: borrar en BD por woocommerce_id y cliente. Devuelve filas afectadas.
+
     private function deleteLocalByWooId(string $cliente, int $wooId): int
     {
         return CategoriaSincronizada::where('cliente', $cliente)
@@ -1242,6 +1242,33 @@ class ApiTestController extends Controller
     public function sirett(string $clienteNombre)
     {
         $cred = ApiConnector::getCredentials($clienteNombre, 'sirett');
+
+        if (!$cred)
+            return response()->json(['error' => 'Credenciales no encontradas'], 404);
+
+        $client = new \SoapClient($cred->base_url . '?wsdl', [
+            'trace' => 1,
+            'exceptions' => true,
+        ]);
+
+        $params = [
+            'ws_pid' => $cred->user,
+            'ws_passwd' => $cred->password,
+            'bid' => $cred->extra,
+        ];
+
+        $reques_query_0 = "wsp_request_bodega_all_items";
+        $reques_query_1 = "wsp_request_items";
+
+        $response = $client->__soapCall($reques_query_1, $params);
+
+
+        return response()->json($response);
+    }
+
+       public function sirett_promo(string $clienteNombre)
+    {
+        $cred = ApiConnector::getCredentials($clienteNombre, 'sirett_promo');
 
         if (!$cred)
             return response()->json(['error' => 'Credenciales no encontradas'], 404);
@@ -1365,554 +1392,1136 @@ class ApiTestController extends Controller
 
 
 
-    public function sincronizarProductosConCategorias(string $clienteNombre)
-    {
-        // === Comportamiento para productos Woo sin SKU ===
-        // 'move'  => mover a categoría "Pendiente de revisión" + status 'draft'
-        // 'delete'=> eliminar con force=true
-        // 'none'  => no hacer nada (solo reportar)
-        $WOO_NO_SKU_ACTION = 'none';                 // 'move' | 'delete' | 'none'
-        $WOO_NO_SKU_CATEGORY = 'Pendiente de revisión';// usada si action = move
+    // public function sincronizarProductosConCategorias(string $clienteNombre)
+    // {
+    //     // === Comportamiento para productos Woo sin SKU ===
+    //     // 'move'  => mover a categoría "Pendiente de revisión" + status 'draft'
+    //     // 'delete'=> eliminar con force=true
+    //     // 'none'  => no hacer nada (solo reportar)
+    //     $WOO_NO_SKU_ACTION = 'none';                 // 'move' | 'delete' | 'none'
+    //     $WOO_NO_SKU_CATEGORY = 'Pendiente de revisión';// usada si action = move
 
+    //     try {
+    //         $inicio = now('America/Managua');
+
+    //         $sync = SyncHistory::create([
+    //             'cliente' => $clienteNombre,
+    //             'started_at' => $inicio,
+    //         ]);
+
+    //         $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
+    //         $credSirett = ApiConnector::getCredentials($clienteNombre, 'sirett');
+    //         $credSirett_promo = ApiConnector::getCredentials($clienteNombre, 'sirett_promo');
+
+    //         if (!$credWoo || !$credSirett) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'Credenciales no encontradas para WooCommerce o SiReTT.');
+    //             return response()->json(['error' => 'Credenciales no encontradas'], 404);
+    //         }
+
+    //         // 1) SiReTT
+    //         try {
+    //             $client = new \SoapClient($credSirett->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
+    //             $client_promo = new \SoapClient($credSirett_promo->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
+    //             $params = ['ws_pid' => $credSirett->user, 'ws_passwd' => $credSirett->password, 'bid' => $credSirett->extra];
+    //             $params_promo = ['ws_pid' => $credSirett_promo->user, 'ws_passwd' => $credSirett_promo->password, 'bid' => $credSirett_promo->extra];
+    //             $response = $client->__soapCall('wsp_request_items', $params);
+    //             $response_promo = $client_promo->__soapCall('wsp_request_items', $params_promo);
+    //             $productosSirett = json_decode(json_encode($response), true)['data'] ?? [];
+    //             $productosSirett_promo = json_decode(json_encode($response_promo), true)['data'] ?? [];
+    //         } catch (\Exception $e) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'Error al conectar con SiReTT: ' . $e->getMessage());
+    //             return response()->json(['error' => 'Error al conectar con SiReTT', 'detalle' => $e->getMessage()], 500);
+    //         }
+
+    //         if (empty($productosSirett)) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'No se obtuvieron productos desde SiReTT.');
+    //             return response()->json(['error' => 'No se obtuvieron productos desde SiReTT'], 500);
+    //         }
+
+    //         if (empty($productosSirett_promo)) {
+    //             $this->notificarErrorTelegram($clienteNombre, 'No se obtuvieron productos desde SiReTT.');
+    //             return response()->json(['error' => 'No se obtuvieron productos desde SiReTT'], 500);
+    //         }
+
+    //         file_put_contents(
+    //             storage_path("logs/productos_sirett_{$clienteNombre}.json"),
+    //             json_encode($productosSirett, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    //         );
+    //         Log::info("✅ Total productos recibidos desde SiReTT: " . count($productosSirett));
+
+    //         // 2) Woo productos
+    //         $productosWoo = collect();
+    //         $page = 1;
+    //         do {
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->get("{$credWoo->base_url}/products", ['per_page' => 100, 'page' => $page]);
+
+    //             if ($res->failed())
+    //                 break;
+
+    //             $batch = collect($res->json());
+    //             $productosWoo = $productosWoo->merge($batch);
+    //             $page++;
+    //         } while ($batch->count() > 0);
+
+    //         // Evitar colisiones por SKU vacío
+    //         $wooPorSku = $productosWoo
+    //             ->filter(fn($p) => isset($p['sku']) && is_string($p['sku']) && trim($p['sku']) !== '')
+    //             ->keyBy(fn($p) => trim($p['sku']));
+
+    //         // 3) familias únicas SiReTT (referencia)
+    //         $familiasSiReTT = collect($productosSirett)
+    //             ->pluck('familia')->filter()->unique()
+    //             ->map(fn($f) => $this->categoryKey($f))
+    //             ->values();
+
+    //         // 4) Woo categorías (traer todas)
+    //         $categoriasWoo = collect();
+    //         $page = 1;
+    //         do {
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page]);
+
+    //             if ($res->failed())
+    //                 break;
+
+    //             $batch = collect($res->json());
+    //             $categoriasWoo = $categoriasWoo->merge($batch);
+    //             $page++;
+    //         } while ($batch->count() > 0);
+
+    //         // Índices para comparación y colisiones
+    //         $categoriasMap = []; // key (minúsculas) => id
+    //         $slugExistentes = []; // slug => id
+    //         foreach ($categoriasWoo as $cat) {
+    //             $id = $cat['id'];
+    //             $name = $cat['name'] ?? '';
+    //             $slug = $cat['slug'] ?? '';
+    //             $key = $this->categoryKey($name);
+    //             $categoriasMap[$key] = $id;
+    //             $slugExistentes[$slug] = $id;
+    //         }
+
+    //         // Renombrar categorías en Woo a “Oración” (visible) y slug minúsculas (opcional)
+    //         foreach ($categoriasWoo as $cat) {
+    //             $id = $cat['id'];
+    //             $name = $cat['name'] ?? '';
+    //             $slug = $cat['slug'] ?? '';
+
+    //             $nameDeseado = $this->categoryDisplay($name); // “Oración”
+    //             $slugDeseado = $this->categorySlug($name);    // minúsculas
+
+    //             $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
+    //             if (!$needsRename)
+    //                 continue;
+
+    //             // Evitar colisiones de slug
+    //             $slugFinal = $slugDeseado;
+    //             if (isset($slugExistentes[$slugDeseado]) && $slugExistentes[$slugDeseado] !== $id) {
+    //                 $slugFinal = $slugDeseado . '-' . $id;
+    //             }
+
+    //             // ⚠️ Si no deseas tocar slug por SEO, elimina 'slug' del payload.
+    //             $payload = ['name' => $nameDeseado, 'slug' => $slugFinal];
+
+    //             $up = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->put("{$credWoo->base_url}/products/categories/{$id}", $payload);
+
+    //             if ($up->successful()) {
+    //                 unset($slugExistentes[$slug]);
+    //                 $slugExistentes[$slugFinal] = $id;
+
+    //                 $oldKey = $this->categoryKey($name);
+    //                 if (isset($categoriasMap[$oldKey]) && $categoriasMap[$oldKey] === $id) {
+    //                     unset($categoriasMap[$oldKey]);
+    //                 }
+    //                 $categoriasMap[$this->categoryKey($nameDeseado)] = $id;
+
+    //                 Log::info("✏️ Categoría #{$id} => name='{$nameDeseado}', slug='{$slugFinal}'");
+    //             } else {
+    //                 Log::warning("❌ No se pudo renombrar categoría #{$id}: " . $up->body());
+    //             }
+    //         }
+
+    //         // --------------- LOOP PRINCIPAL ---------------
+    //         $creados = [];
+    //         $omitidos = [];
+    //         $actualizados = [];
+    //         $categoriasFallidas = [];
+    //         $fallidosPorCategoria = [];
+    //         $productosParaCrear = [];
+
+    //         foreach ($productosSirett as $producto) {
+    //             $sku = trim($producto['codigo'] ?? '');
+    //             if ($sku === '')
+    //                 continue;
+
+    //             $wooProducto = $wooPorSku[$sku] ?? null;
+
+    //             $nombreCategoriaOriginal = trim($producto['familia'] ?? '');
+    //             if ($nombreCategoriaOriginal === '') {
+    //                 Log::warning("❌ Producto con SKU $sku no tiene familia. Se omite.");
+    //                 SyncError::create([
+    //                     'sync_history_id' => $sync->id,
+    //                     'sku' => $sku,
+    //                     'tipo_error' => 'familia_vacia',
+    //                     'detalle' => json_encode($producto, JSON_UNESCAPED_UNICODE),
+    //                 ]);
+    //                 $categoriasFallidas[] = '(sin familia)';
+    //                 $fallidosPorCategoria[] = $sku;
+    //                 continue;
+    //             }
+
+    //             // Normalización de categoría para mapa y display
+    //             $keyDeseado = $this->categoryKey($nombreCategoriaOriginal);
+    //             $nameVisible = $this->categoryDisplay($nombreCategoriaOriginal);
+
+    //             $categoriaId = $categoriasMap[$keyDeseado] ?? null;
+    //             if (!$categoriaId) {
+    //                 // Crear categoría con nombre visible “Oración” y slug minúsculas
+    //                 $slugDeseado = $this->categorySlug($nombreCategoriaOriginal);
+    //                 $slugFinal = $slugDeseado;
+    //                 if (isset($slugExistentes[$slugDeseado])) {
+    //                     $slugFinal = $slugDeseado . '-' . uniqid();
+    //                 }
+
+    //                 $resCategoria = Http::retry(3, 2000)
+    //                     ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                     ->timeout(120)
+    //                     ->post("{$credWoo->base_url}/products/categories", [
+    //                         'name' => $nameVisible,
+    //                         'slug' => $slugFinal, // remover si no quieres tocar slug
+    //                     ]);
+
+    //                 if ($resCategoria->successful()) {
+    //                     $categoriaId = $resCategoria->json('id');
+    //                     $categoriasMap[$keyDeseado] = $categoriaId;
+    //                     $slugExistentes[$slugFinal] = $categoriaId;
+    //                 } else {
+    //                     Log::warning("❌ No se pudo crear categoría: $nombreCategoriaOriginal");
+    //                     $categoriasFallidas[] = $nombreCategoriaOriginal;
+    //                     $fallidosPorCategoria[] = $sku;
+    //                     continue;
+    //                 }
+    //             }
+
+    //             // ====== EXISTE EN WOO: comparar usando NORMALIZACIÓN ======
+    //             if ($wooProducto) {
+    //                 $nombre = trim($producto['descripcion'] ?? '');
+    //                 $precio = number_format((float) ($producto['precio'] ?? 0), 2, '.', '');
+    //                 $stock = (int) ($producto['stock'] ?? 0);
+
+    //                 $nameOld = $wooProducto['name'] ?? '';
+    //                 $nameNew = $nombre;
+
+    //                 $catOldName = $wooProducto['categories'][0]['name'] ?? '';
+    //                 $catNewName = $nombreCategoriaOriginal;
+
+    //                 $needsUpdate =
+    //                     ($this->normalizeText($nameOld) !== $this->normalizeText($nameNew)) ||
+    //                     (($wooProducto['regular_price'] ?? '') !== $precio) ||
+    //                     ((int) ($wooProducto['stock_quantity'] ?? 0) !== $stock) ||
+    //                     ($this->categoryKey($catOldName) !== $this->categoryKey($catNewName));
+
+    //                 if ($needsUpdate) {
+    //                     $resUpdate = Http::retry(3, 2000)
+    //                         ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                         ->timeout(120)
+    //                         ->put("{$credWoo->base_url}/products/{$wooProducto['id']}", [
+    //                             'name' => $nombre,
+    //                             'regular_price' => $precio,
+    //                             'stock_quantity' => $stock,
+    //                             'categories' => [['id' => $categoriaId]],
+    //                             'manage_stock' => true,
+    //                             'description' => $producto['caracteristicas'] ?? '',
+    //                         ]);
+
+    //                     if ($resUpdate->successful()) {
+    //                         $actualizados[] = $sku;
+
+    //                         $rName = $this->fieldDiffReport('name', $nameOld, $nameNew);
+    //                         $rCat = $this->fieldDiffReport('categoria', $catOldName, $catNewName);
+    //                         $rPrecio = [
+    //                             'campo' => 'precio',
+    //                             'igual' => (($wooProducto['regular_price'] ?? '') === $precio),
+    //                             'old_raw' => $wooProducto['regular_price'] ?? '',
+    //                             'new_raw' => $precio,
+    //                         ];
+    //                         $rStock = [
+    //                             'campo' => 'stock',
+    //                             'igual' => ((int) ($wooProducto['stock_quantity'] ?? 0) === $stock),
+    //                             'old_raw' => (int) ($wooProducto['stock_quantity'] ?? 0),
+    //                             'new_raw' => $stock,
+    //                         ];
+
+    //                         SyncHistoryDetail::create([
+    //                             'sync_history_id' => $sync->id,
+    //                             'sku' => $sku,
+    //                             'tipo' => 'actualizado',
+    //                             'datos_anteriores' => [
+    //                                 'name' => $nameOld,
+    //                                 'precio' => $wooProducto['regular_price'] ?? '',
+    //                                 'stock' => $wooProducto['stock_quantity'] ?? 0,
+    //                                 'categoria' => $catOldName,
+    //                             ],
+    //                             'datos_nuevos' => [
+    //                                 'name' => $nameNew,
+    //                                 'precio' => $precio,
+    //                                 'stock' => $stock,
+    //                                 'categoria' => $catNewName,
+    //                             ],
+    //                             'deltas' => [
+    //                                 'name' => $rName,
+    //                                 'categoria' => $rCat,
+    //                                 'precio' => $rPrecio,
+    //                                 'stock' => $rStock,
+    //                             ],
+    //                         ]);
+
+    //                         Log::info("🔍 Diff SKU {$sku}", [
+    //                             'name_equal' => $rName['igual'],
+    //                             'name_first_diff' => $rName['first_diff'],
+    //                             'cat_equal' => $rCat['igual'],
+    //                             'cat_first_diff' => $rCat['first_diff'],
+    //                             'precio_equal' => $rPrecio['igual'],
+    //                             'stock_equal' => $rStock['igual'],
+    //                         ]);
+    //                     } else {
+    //                         $this->notificarErrorTelegram($clienteNombre, "Error actualizando SKU $sku: " . $resUpdate->body());
+    //                         Log::warning("❌ Error actualizando SKU $sku: " . $resUpdate->body());
+    //                     }
+    //                 } else {
+    //                     $omitidos[] = $sku;
+    //                 }
+
+    //                 continue; // ya procesado este SKU
+    //             }
+
+    //             // ====== NO EXISTE EN WOO: preparar creación ======
+    //             $productosParaCrear[] = [
+    //                 'name' => $producto['descripcion'] ?? '',
+    //                 'sku' => $sku,
+    //                 'regular_price' => number_format((float) ($producto['precio'] ?? 0), 2, '.', ''),
+    //                 'stock_quantity' => (int) ($producto['stock'] ?? 0),
+    //                 'manage_stock' => true,
+    //                 'description' => $producto['caracteristicas'] ?? '',
+    //                 'categories' => [['id' => $categoriaId]],
+    //                 'images' => $this->mapearImagenes($producto),
+    //             ];
+
+    //             $creados[] = $sku;
+    //             SyncHistoryDetail::create([
+    //                 'sync_history_id' => $sync->id,
+    //                 'sku' => $sku,
+    //                 'tipo' => 'creado',
+    //                 'datos_nuevos' => [
+    //                     'name' => $producto['descripcion'] ?? '',
+    //                     'sku' => $sku,
+    //                     'precio' => $producto['precio'] ?? 0,
+    //                     'stock' => $producto['stock'] ?? 0,
+    //                     'categoria' => $nombreCategoriaOriginal,
+    //                 ],
+    //             ]);
+    //         }
+
+    //         // Lotes de creación
+    //         $resultados = [];
+    //         foreach (array_chunk($productosParaCrear, 50) as $lote) {
+    //             Log::info("⏳ Enviando lote con " . count($lote) . " productos a WooCommerce");
+
+    //             $res = Http::retry(3, 2000)
+    //                 ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                 ->timeout(120)
+    //                 ->post("{$credWoo->base_url}/products/batch", ['create' => $lote]);
+
+    //             if ($res->successful()) {
+    //                 $resultados[] = ['status' => '✅ Lote creado', 'response' => $res->json()];
+    //             } else {
+    //                 $resultados[] = ['status' => '❌ Error al crear lote', 'response' => $res->body()];
+    //                 $this->notificarErrorTelegram($clienteNombre, 'Error creando lote en WooCommerce: ' . $res->body());
+    //                 Log::warning("❌ Error al crear lote: " . $res->body());
+    //             }
+    //         }
+
+    //         // --- Métricas extra para el cruce de SKUs
+    //         $skusSirett = collect($productosSirett)
+    //             ->pluck('codigo')
+    //             ->map(fn($v) => is_string($v) ? trim($v) : (string) $v)
+    //             ->filter(fn($v) => $v !== '')
+    //             ->unique()->values();
+
+    //         // Woo: separa con y sin SKU
+    //         $wooConSku = $productosWoo->filter(function ($p) {
+    //             $s = $p['sku'] ?? '';
+    //             return is_string($s) && trim($s) !== '';
+    //         });
+    //         $wooSinSku = $productosWoo->filter(function ($p) {
+    //             $s = $p['sku'] ?? '';
+    //             return !is_string($s) || trim($s) === '';
+    //         });
+
+    //         $skusWoo = $wooConSku->pluck('sku')
+    //             ->map(fn($v) => trim($v))->unique()->values();
+
+    //         // SKUs que están en Woo pero NO en SiReTT
+    //         $soloWoo = $skusWoo->diff($skusSirett)->values();
+
+    //         // Detalle de “solo en Woo”
+    //         $soloWooDetalle = $wooConSku
+    //             ->filter(fn($p) => $soloWoo->contains(trim($p['sku'])))
+    //             ->map(fn($p) => [
+    //                 'id' => $p['id'] ?? null,
+    //                 'sku' => trim($p['sku']),
+    //                 'name' => $p['name'] ?? null,
+    //                 'status' => $p['status'] ?? null,
+    //             ])->values();
+
+    //         // Guarda archivo de apoyo
+    //         $reporte = [
+    //             'solo_woocommerce' => $soloWoo,
+    //             'woo_sin_sku' => $wooSinSku->map(fn($p) => [
+    //                 'id' => $p['id'] ?? null,
+    //                 'name' => $p['name'] ?? null,
+    //                 'type' => $p['type'] ?? null,
+    //                 'status' => $p['status'] ?? null,
+    //             ])->values(),
+    //         ];
+    //         file_put_contents(
+    //             storage_path("logs/solo_woo_{$clienteNombre}.json"),
+    //             json_encode($reporte, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    //         );
+
+    //         // SKUs con stock = 0 en SiReTT
+    //         $stockCeroSirett = collect($productosSirett)
+    //             ->filter(fn($p) => (int) ($p['stock'] ?? 0) === 0)
+    //             ->pluck('codigo')
+    //             ->filter(fn($v) => is_string($v) && trim($v) !== '')
+    //             ->map(fn($v) => trim($v))
+    //             ->unique()->values();
+
+    //         // Guardar CSV de stock=0 para esta corrida
+    //         $csvLines = "sku\n" . implode("\n", $stockCeroSirett->all());
+    //         $csvPath = "exports/stock_cero_{$sync->id}.csv";
+    //         Storage::disk('local')->put($csvPath, $csvLines);
+
+    //         // --- Gestionar productos Woo sin SKU ---
+    //         $gestionWooSinSku = [
+    //             'accion' => $WOO_NO_SKU_ACTION,
+    //             'procesados' => 0,
+    //             'moved_ids' => [],
+    //             'deleted_ids' => [],
+    //             'errores' => [],
+    //         ];
+
+    //         if ($WOO_NO_SKU_ACTION !== 'none' && $wooSinSku->count() > 0) {
+    //             if ($WOO_NO_SKU_ACTION === 'move') {
+    //                 $catPendId = $this->ensureCategoryExists($credWoo, $WOO_NO_SKU_CATEGORY, $categoriasMap, $slugExistentes);
+    //                 if ($catPendId) {
+    //                     $updates = $wooSinSku->map(function ($p) use ($catPendId) {
+    //                         return ['id' => $p['id'], 'status' => 'draft', 'categories' => [['id' => $catPendId]]];
+    //                     })->values()->all();
+
+    //                     foreach (array_chunk($updates, 50) as $lote) {
+    //                         $up = Http::retry(3, 2000)
+    //                             ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                             ->timeout(120)
+    //                             ->post("{$credWoo->base_url}/products/batch", ['update' => $lote]);
+
+    //                         if ($up->successful()) {
+    //                             $gestionWooSinSku['procesados'] += count($lote);
+    //                             $gestionWooSinSku['moved_ids'] = array_merge(
+    //                                 $gestionWooSinSku['moved_ids'],
+    //                                 array_column($lote, 'id')
+    //                             );
+    //                         } else {
+    //                             $gestionWooSinSku['errores'][] = $up->body();
+    //                             Log::warning("❌ Error al mover Woo sin SKU: " . $up->body());
+    //                         }
+    //                     }
+    //                 } else {
+    //                     $gestionWooSinSku['errores'][] = 'No se pudo crear/obtener categoría especial.';
+    //                 }
+    //             }
+
+    //             if ($WOO_NO_SKU_ACTION === 'delete') {
+    //                 foreach ($wooSinSku as $p) {
+    //                     $pid = $p['id'];
+    //                     $del = Http::retry(2, 1500)
+    //                         ->withBasicAuth($credWoo->user, $credWoo->password)
+    //                         ->timeout(60)
+    //                         ->delete("{$credWoo->base_url}/products/{$pid}", ['force' => true]);
+
+    //                     if ($del->successful()) {
+    //                         $gestionWooSinSku['procesados']++;
+    //                         $gestionWooSinSku['deleted_ids'][] = $pid;
+    //                     } else {
+    //                         $gestionWooSinSku['errores'][] = "ID {$pid}: " . $del->body();
+    //                         Log::warning("❌ Error al eliminar producto #{$pid} sin SKU: " . $del->body());
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         // Tiempos
+    //         $fin = now('America/Managua');
+    //         $duracion = $inicio->diffInSeconds($fin);
+    //         Log::info("⏱️ Tiempo total de sincronización para {$clienteNombre}: {$duracion} segundos");
+
+    //         // Persistir resumen numérico en SyncHistory
+    //         $sync->update([
+    //             'finished_at' => $fin,
+    //             'total_creados' => count($creados),
+    //             'total_actualizados' => count($actualizados),
+    //             'total_omitidos' => count($omitidos),
+    //             'total_fallidos_categoria' => count($fallidosPorCategoria),
+    //         ]);
+
+    //         // (AHORA SÍ) Enviar Telegram de último
+    //         $resumenTelegram = "📦 <b>Sincronización completada</b> para <b>{$clienteNombre}</b>\n"
+    //             . "🆕 Nuevos: <b>" . count($creados) . "</b>\n"
+    //             . "🔄 Actualizados: <b>" . count($actualizados) . "</b>\n"
+    //             . "⏭️ Omitidos: <b>" . count($omitidos) . "</b>\n"
+    //             . "🛑 Ignorados por categoría: <b>" . count($fallidosPorCategoria) . "</b>\n"
+    //             . "📤 Lotes enviados: <b>" . count($resultados) . "</b>\n"
+    //             . "📥 Total productos SiReTT: <b>" . count($productosSirett) . "</b>\n"
+    //             . "🛒 Total productos Woo: <b>" . $productosWoo->count() . "</b>\n"
+    //             . "🧩 Solo en Woo (vs SiReTT): <b>" . $soloWoo->count() . "</b>\n"
+    //             . "🚫 Woo sin SKU: <b>" . $wooSinSku->count() . "</b>";
+
+    //         if ($WOO_NO_SKU_ACTION === 'move') {
+    //             $resumenTelegram .= "\n📦 Sin SKU movidos a '{$WOO_NO_SKU_CATEGORY}': <b>" . $gestionWooSinSku['procesados'] . "</b>";
+    //         }
+    //         if ($WOO_NO_SKU_ACTION === 'delete') {
+    //             $resumenTelegram .= "\n🗑️ Sin SKU eliminados: <b>" . $gestionWooSinSku['procesados'] . "</b>";
+    //         }
+    //         if (!empty($categoriasFallidas)) {
+    //             $resumenTelegram .= "\n❌ Categorías no creadas:\n<code>" . implode(', ', array_unique($categoriasFallidas)) . "</code>";
+    //         }
+    //         $resumenTelegram .= "\n⏰ Inicio: <b>{$inicio->format('H:i:s')}</b>"
+    //             . "\n🏁 Fin: <b>{$fin->format('H:i:s')}</b>"
+    //             . "\n⏱️ Duración: <b>{$duracion}</b> segundos";
+
+    //         $this->notificarTelegram($clienteNombre, $resumenTelegram);
+
+    //         // Respuesta JSON
+    //         return response()->json([
+    //             'mensaje' => 'Sincronización completa.',
+    //             'total_sirett' => count($productosSirett),
+    //             'total_woocommerce' => $productosWoo->count(),
+    //             'total_creados' => count($creados),
+    //             'total_actualizados' => count($actualizados),
+    //             'total_omitidos' => count($omitidos),
+    //             'total_fallidos_categoria' => count($fallidosPorCategoria),
+    //             'creados' => $creados,
+    //             'actualizados' => $actualizados,
+    //             'omitidos' => $omitidos,
+    //             'fallidos_categoria' => $fallidosPorCategoria,
+    //             'lotes_enviados' => count($resultados),
+    //             'resultado_lotes' => $resultados,
+
+    //             // Extras de conciliación
+    //             'total_solo_woocommerce' => $soloWoo->count(),
+    //             'solo_woocommerce' => $soloWoo,                 // SKUs
+    //             'solo_woocommerce_detalle' => $soloWooDetalle,          // id, sku, name, status
+    //             'total_woo_sin_sku' => $wooSinSku->count(),
+    //             'woo_sin_sku_ids' => $wooSinSku->pluck('id')->values(),
+    //             'total_stock_cero_sirett' => $stockCeroSirett->count(),
+    //             'stock_cero_sirett' => $stockCeroSirett,
+
+    //             // Gestión sin SKU
+    //             'woo_sin_sku_action' => $WOO_NO_SKU_ACTION,
+    //             'woo_sin_sku_processed' => $gestionWooSinSku['procesados'],
+    //             'woo_sin_sku_moved_ids' => $gestionWooSinSku['moved_ids'],
+    //             'woo_sin_sku_deleted_ids' => $gestionWooSinSku['deleted_ids'],
+    //             'woo_sin_sku_errors' => $gestionWooSinSku['errores'],
+
+    //             'categorias_no_creadas' => array_unique($categoriasFallidas),
+    //         ]);
+
+    //     } catch (\Throwable $e) {
+    //         $this->notificarErrorTelegram($clienteNombre, 'Excepción inesperada: ' . $e->getMessage());
+    //         Log::error("❌ Excepción no controlada: " . $e->getMessage());
+    //         return response()->json(['error' => 'Excepción no controlada', 'detalle' => $e->getMessage()], 500);
+    //     }
+    // }
+
+
+    public function sincronizarProductosConCategorias(string $clienteNombre) 
+{
+    // === Comportamiento para productos Woo sin SKU ===
+    $WOO_NO_SKU_ACTION = 'none';                 // 'move' | 'delete' | 'none'
+    $WOO_NO_SKU_CATEGORY = 'Pendiente de revisión';
+
+    try {
+        $inicio = now('America/Managua');
+
+        $sync = SyncHistory::create([
+            'cliente'     => $clienteNombre,
+            'started_at'  => $inicio,
+        ]);
+
+        $credWoo         = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
+        $credSirett      = ApiConnector::getCredentials($clienteNombre, 'sirett');
+        $credSirettPromo = ApiConnector::getCredentials($clienteNombre, 'sirett_promo');
+
+        if (!$credWoo || !$credSirett || !$credSirettPromo) {
+            $this->notificarErrorTelegram($clienteNombre, 'Credenciales no encontradas para WooCommerce o SiReTT (promo).');
+            return response()->json(['error' => 'Credenciales no encontradas'], 404);
+        }
+
+        // 1) SiReTT
         try {
-            $inicio = now('America/Managua');
+            $client       = new \SoapClient($credSirett->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
+            $clientPromo  = new \SoapClient($credSirettPromo->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
 
-            $sync = SyncHistory::create([
-                'cliente' => $clienteNombre,
-                'started_at' => $inicio,
-            ]);
+            $params       = ['ws_pid' => $credSirett->user,      'ws_passwd' => $credSirett->password,      'bid' => $credSirett->extra];
+            $paramsPromo  = ['ws_pid' => $credSirettPromo->user, 'ws_passwd' => $credSirettPromo->password, 'bid' => $credSirettPromo->extra];
 
-            $credWoo = ApiConnector::getCredentials($clienteNombre, 'woocommerce');
-            $credSirett = ApiConnector::getCredentials($clienteNombre, 'sirett');
+            $response        = $client->__soapCall('wsp_request_items', $params);
+            $responsePromo   = $clientPromo->__soapCall('wsp_request_items', $paramsPromo);
 
-            if (!$credWoo || !$credSirett) {
-                $this->notificarErrorTelegram($clienteNombre, 'Credenciales no encontradas para WooCommerce o SiReTT.');
-                return response()->json(['error' => 'Credenciales no encontradas'], 404);
+            $productosSirett       = json_decode(json_encode($response), true)['data'] ?? [];
+            $productosSirett_promo = json_decode(json_encode($responsePromo), true)['data'] ?? [];
+        } catch (\Exception $e) {
+            $this->notificarErrorTelegram($clienteNombre, 'Error al conectar con SiReTT: ' . $e->getMessage());
+            return response()->json(['error' => 'Error al conectar con SiReTT', 'detalle' => $e->getMessage()], 500);
+        }
+
+        if (empty($productosSirett)) {
+            $this->notificarErrorTelegram($clienteNombre, 'No se obtuvieron productos desde SiReTT (catálogo).');
+            return response()->json(['error' => 'No se obtuvieron productos desde SiReTT'], 500);
+        }
+
+        if (!is_array($productosSirett_promo)) {
+            $productosSirett_promo = [];
+        }
+
+        // Guarda catálogo para depurar
+        file_put_contents(
+            storage_path("logs/productos_sirett_{$clienteNombre}.json"),
+            json_encode($productosSirett, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+        );
+        Log::info("✅ Total productos recibidos desde SiReTT: " . count($productosSirett));
+        Log::info("✅ Total productos PROMO desde SiReTT: " . count($productosSirett_promo));
+
+        // === Índice de promociones por SKU (código) ===
+        $promoPorSku = collect($productosSirett_promo)
+            ->filter(fn($p) => isset($p['codigo']) && is_string($p['codigo']) && trim($p['codigo']) !== '')
+            ->keyBy(fn($p) => trim((string)$p['codigo']));
+
+        // 2) Woo productos
+        $productosWoo = collect();
+        $page = 1;
+        do {
+            $res = Http::retry(3, 2000)
+                ->withBasicAuth($credWoo->user, $credWoo->password)
+                ->timeout(120)
+                ->get("{$credWoo->base_url}/products", ['per_page' => 100, 'page' => $page]);
+
+            if ($res->failed()) break;
+
+            $batch = collect($res->json());
+            $productosWoo = $productosWoo->merge($batch);
+            $page++;
+        } while ($batch->count() > 0);
+
+        // Evitar colisiones por SKU vacío
+        $wooPorSku = $productosWoo
+            ->filter(fn($p) => isset($p['sku']) && is_string($p['sku']) && trim($p['sku']) !== '')
+            ->keyBy(fn($p) => trim($p['sku']));
+
+        // 3) familias únicas SiReTT (referencia)
+        $familiasSiReTT = collect($productosSirett)
+            ->pluck('familia')->filter()->unique()
+            ->map(fn($f) => $this->categoryKey($f))
+            ->values();
+
+        // 4) Woo categorías (traer todas)
+        $categoriasWoo = collect();
+        $page = 1;
+        do {
+            $res = Http::retry(3, 2000)
+                ->withBasicAuth($credWoo->user, $credWoo->password)
+                ->timeout(120)
+                ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page]);
+
+            if ($res->failed()) break;
+
+            $batch = collect($res->json());
+            $categoriasWoo = $categoriasWoo->merge($batch);
+            $page++;
+        } while ($batch->count() > 0);
+
+        // Índices para comparación y colisiones
+        $categoriasMap   = []; // key (minúsculas) => id
+        $slugExistentes  = []; // slug => id
+        foreach ($categoriasWoo as $cat) {
+            $id   = $cat['id'];
+            $name = $cat['name'] ?? '';
+            $slug = $cat['slug'] ?? '';
+            $key  = $this->categoryKey($name);
+            $categoriasMap[$key] = $id;
+            $slugExistentes[$slug] = $id;
+        }
+
+        // Renombrar categorías a “Oración” + slug minúsculas
+        foreach ($categoriasWoo as $cat) {
+            $id   = $cat['id'];
+            $name = $cat['name'] ?? '';
+            $slug = $cat['slug'] ?? '';
+
+            $nameDeseado = $this->categoryDisplay($name);
+            $slugDeseado = $this->categorySlug($name);
+
+            $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
+            if (!$needsRename) continue;
+
+            $slugFinal = $slugDeseado;
+            if (isset($slugExistentes[$slugDeseado]) && $slugExistentes[$slugDeseado] !== $id) {
+                $slugFinal = $slugDeseado . '-' . $id;
             }
 
-            // 1) SiReTT
-            try {
-                $client = new \SoapClient($credSirett->base_url . '?wsdl', ['trace' => 1, 'exceptions' => true]);
-                $params = ['ws_pid' => $credSirett->user, 'ws_passwd' => $credSirett->password, 'bid' => $credSirett->extra];
-                $response = $client->__soapCall('wsp_request_items', $params);
-                $productosSirett = json_decode(json_encode($response), true)['data'] ?? [];
-            } catch (\Exception $e) {
-                $this->notificarErrorTelegram($clienteNombre, 'Error al conectar con SiReTT: ' . $e->getMessage());
-                return response()->json(['error' => 'Error al conectar con SiReTT', 'detalle' => $e->getMessage()], 500);
+            $payload = ['name' => $nameDeseado, 'slug' => $slugFinal];
+
+            $up = Http::retry(3, 2000)
+                ->withBasicAuth($credWoo->user, $credWoo->password)
+                ->timeout(120)
+                ->put("{$credWoo->base_url}/products/categories/{$id}", $payload);
+
+            if ($up->successful()) {
+                unset($slugExistentes[$slug]);
+                $slugExistentes[$slugFinal] = $id;
+
+                $oldKey = $this->categoryKey($name);
+                if (isset($categoriasMap[$oldKey]) && $categoriasMap[$oldKey] === $id) {
+                    unset($categoriasMap[$oldKey]);
+                }
+                $categoriasMap[$this->categoryKey($nameDeseado)] = $id;
+
+                Log::info("✏️ Categoría #{$id} => name='{$nameDeseado}', slug='{$slugFinal}'");
+            } else {
+                Log::warning("❌ No se pudo renombrar categoría #{$id}: " . $up->body());
+            }
+        }
+
+        // --------------- LOOP PRINCIPAL ---------------
+        $creados = [];
+        $omitidos = [];
+        $actualizados = [];
+        $categoriasFallidas = [];
+        $fallidosPorCategoria = [];
+        $productosParaCrear = [];
+
+        foreach ($productosSirett as $producto) {
+            $sku = trim((string)($producto['codigo'] ?? ''));
+            if ($sku === '') continue;
+
+            // Precio normal y stock del catálogo principal
+            $nombre       = trim((string)($producto['descripcion'] ?? ''));
+            $precio       = number_format((float)($producto['precio'] ?? 0), 2, '.', '');
+            $stock        = (int)($producto['stock'] ?? 0);
+
+            // === Precio PROMO (sale_price) si existe en promos ===
+            $promoPrecio = null;
+            if (isset($promoPorSku[$sku])) {
+                $promoPrecio = number_format((float)($promoPorSku[$sku]['precio'] ?? 0), 2, '.', '');
+                // Si por alguna razón viene 0.00, lo trataremos como "sin promo"
+                if ($promoPrecio === '0.00') {
+                    $promoPrecio = null;
+                }
             }
 
-            if (empty($productosSirett)) {
-                $this->notificarErrorTelegram($clienteNombre, 'No se obtuvieron productos desde SiReTT.');
-                return response()->json(['error' => 'No se obtuvieron productos desde SiReTT'], 500);
+            $wooProducto = $wooPorSku[$sku] ?? null;
+
+            $nombreCategoriaOriginal = trim((string)($producto['familia'] ?? ''));
+            if ($nombreCategoriaOriginal === '') {
+                Log::warning("❌ Producto con SKU $sku no tiene familia. Se omite.");
+                SyncError::create([
+                    'sync_history_id' => $sync->id,
+                    'sku'             => $sku,
+                    'tipo_error'      => 'familia_vacia',
+                    'detalle'         => json_encode($producto, JSON_UNESCAPED_UNICODE),
+                ]);
+                $categoriasFallidas[]    = '(sin familia)';
+                $fallidosPorCategoria[]  = $sku;
+                continue;
             }
 
-            file_put_contents(
-                storage_path("logs/productos_sirett_{$clienteNombre}.json"),
-                json_encode($productosSirett, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-            );
-            Log::info("✅ Total productos recibidos desde SiReTT: " . count($productosSirett));
+            // Normalización de categoría
+            $keyDeseado  = $this->categoryKey($nombreCategoriaOriginal);
+            $nameVisible = $this->categoryDisplay($nombreCategoriaOriginal);
 
-            // 2) Woo productos
-            $productosWoo = collect();
-            $page = 1;
-            do {
-                $res = Http::retry(3, 2000)
-                    ->withBasicAuth($credWoo->user, $credWoo->password)
-                    ->timeout(120)
-                    ->get("{$credWoo->base_url}/products", ['per_page' => 100, 'page' => $page]);
-
-                if ($res->failed())
-                    break;
-
-                $batch = collect($res->json());
-                $productosWoo = $productosWoo->merge($batch);
-                $page++;
-            } while ($batch->count() > 0);
-
-            // Evitar colisiones por SKU vacío
-            $wooPorSku = $productosWoo
-                ->filter(fn($p) => isset($p['sku']) && is_string($p['sku']) && trim($p['sku']) !== '')
-                ->keyBy(fn($p) => trim($p['sku']));
-
-            // 3) familias únicas SiReTT (referencia)
-            $familiasSiReTT = collect($productosSirett)
-                ->pluck('familia')->filter()->unique()
-                ->map(fn($f) => $this->categoryKey($f))
-                ->values();
-
-            // 4) Woo categorías (traer todas)
-            $categoriasWoo = collect();
-            $page = 1;
-            do {
-                $res = Http::retry(3, 2000)
-                    ->withBasicAuth($credWoo->user, $credWoo->password)
-                    ->timeout(120)
-                    ->get("{$credWoo->base_url}/products/categories", ['per_page' => 100, 'page' => $page]);
-
-                if ($res->failed())
-                    break;
-
-                $batch = collect($res->json());
-                $categoriasWoo = $categoriasWoo->merge($batch);
-                $page++;
-            } while ($batch->count() > 0);
-
-            // Índices para comparación y colisiones
-            $categoriasMap = []; // key (minúsculas) => id
-            $slugExistentes = []; // slug => id
-            foreach ($categoriasWoo as $cat) {
-                $id = $cat['id'];
-                $name = $cat['name'] ?? '';
-                $slug = $cat['slug'] ?? '';
-                $key = $this->categoryKey($name);
-                $categoriasMap[$key] = $id;
-                $slugExistentes[$slug] = $id;
-            }
-
-            // Renombrar categorías en Woo a “Oración” (visible) y slug minúsculas (opcional)
-            foreach ($categoriasWoo as $cat) {
-                $id = $cat['id'];
-                $name = $cat['name'] ?? '';
-                $slug = $cat['slug'] ?? '';
-
-                $nameDeseado = $this->categoryDisplay($name); // “Oración”
-                $slugDeseado = $this->categorySlug($name);    // minúsculas
-
-                $needsRename = ($name !== $nameDeseado) || ($slug !== $slugDeseado);
-                if (!$needsRename)
-                    continue;
-
-                // Evitar colisiones de slug
-                $slugFinal = $slugDeseado;
-                if (isset($slugExistentes[$slugDeseado]) && $slugExistentes[$slugDeseado] !== $id) {
-                    $slugFinal = $slugDeseado . '-' . $id;
+            $categoriaId = $categoriasMap[$keyDeseado] ?? null;
+            if (!$categoriaId) {
+                // Crear categoría con nombre visible “Oración” y slug minúsculas
+                $slugDeseado = $this->categorySlug($nombreCategoriaOriginal);
+                $slugFinal   = $slugDeseado;
+                if (isset($slugExistentes[$slugDeseado])) {
+                    $slugFinal = $slugDeseado . '-' . uniqid();
                 }
 
-                // ⚠️ Si no deseas tocar slug por SEO, elimina 'slug' del payload.
-                $payload = ['name' => $nameDeseado, 'slug' => $slugFinal];
-
-                $up = Http::retry(3, 2000)
+                $resCategoria = Http::retry(3, 2000)
                     ->withBasicAuth($credWoo->user, $credWoo->password)
                     ->timeout(120)
-                    ->put("{$credWoo->base_url}/products/categories/{$id}", $payload);
-
-                if ($up->successful()) {
-                    unset($slugExistentes[$slug]);
-                    $slugExistentes[$slugFinal] = $id;
-
-                    $oldKey = $this->categoryKey($name);
-                    if (isset($categoriasMap[$oldKey]) && $categoriasMap[$oldKey] === $id) {
-                        unset($categoriasMap[$oldKey]);
-                    }
-                    $categoriasMap[$this->categoryKey($nameDeseado)] = $id;
-
-                    Log::info("✏️ Categoría #{$id} => name='{$nameDeseado}', slug='{$slugFinal}'");
-                } else {
-                    Log::warning("❌ No se pudo renombrar categoría #{$id}: " . $up->body());
-                }
-            }
-
-            // --------------- LOOP PRINCIPAL ---------------
-            $creados = [];
-            $omitidos = [];
-            $actualizados = [];
-            $categoriasFallidas = [];
-            $fallidosPorCategoria = [];
-            $productosParaCrear = [];
-
-            foreach ($productosSirett as $producto) {
-                $sku = trim($producto['codigo'] ?? '');
-                if ($sku === '')
-                    continue;
-
-                $wooProducto = $wooPorSku[$sku] ?? null;
-
-                $nombreCategoriaOriginal = trim($producto['familia'] ?? '');
-                if ($nombreCategoriaOriginal === '') {
-                    Log::warning("❌ Producto con SKU $sku no tiene familia. Se omite.");
-                    SyncError::create([
-                        'sync_history_id' => $sync->id,
-                        'sku' => $sku,
-                        'tipo_error' => 'familia_vacia',
-                        'detalle' => json_encode($producto, JSON_UNESCAPED_UNICODE),
+                    ->post("{$credWoo->base_url}/products/categories", [
+                        'name' => $nameVisible,
+                        'slug' => $slugFinal,
                     ]);
-                    $categoriasFallidas[] = '(sin familia)';
+
+                if ($resCategoria->successful()) {
+                    $categoriaId = $resCategoria->json('id');
+                    $categoriasMap[$keyDeseado] = $categoriaId;
+                    $slugExistentes[$slugFinal] = $categoriaId;
+                } else {
+                    Log::warning("❌ No se pudo crear categoría: $nombreCategoriaOriginal");
+                    $categoriasFallidas[]   = $nombreCategoriaOriginal;
                     $fallidosPorCategoria[] = $sku;
                     continue;
                 }
+            }
 
-                // Normalización de categoría para mapa y display
-                $keyDeseado = $this->categoryKey($nombreCategoriaOriginal);
-                $nameVisible = $this->categoryDisplay($nombreCategoriaOriginal);
+            // ====== EXISTE EN WOO: comparar ======
+            if ($wooProducto) {
+                $nameOld     = $wooProducto['name'] ?? '';
+                $catOldName  = $wooProducto['categories'][0]['name'] ?? '';
+                $oldRegular  = (string)($wooProducto['regular_price'] ?? '');
+                $oldStock    = (int)($wooProducto['stock_quantity'] ?? 0);
+                $oldSale     = (string)($wooProducto['sale_price'] ?? '');
 
-                $categoriaId = $categoriasMap[$keyDeseado] ?? null;
-                if (!$categoriaId) {
-                    // Crear categoría con nombre visible “Oración” y slug minúsculas
-                    $slugDeseado = $this->categorySlug($nombreCategoriaOriginal);
-                    $slugFinal = $slugDeseado;
-                    if (isset($slugExistentes[$slugDeseado])) {
-                        $slugFinal = $slugDeseado . '-' . uniqid();
-                    }
+                // Si no hay promo nueva, queremos limpiar sale_price (string vacío elimina oferta)
+                $desiredSale = $promoPrecio ?? '';
 
-                    $resCategoria = Http::retry(3, 2000)
+                $needsUpdate =
+                    ($this->normalizeText($nameOld) !== $this->normalizeText($nombre)) ||
+                    ($oldRegular !== $precio) ||
+                    ($oldSale !== $desiredSale) ||
+                    ($oldStock !== $stock) ||
+                    ($this->categoryKey($catOldName) !== $this->categoryKey($nombreCategoriaOriginal));
+
+                if ($needsUpdate) {
+                    $payload = [
+                        'name'           => $nombre,
+                        'regular_price'  => $precio,
+                        'sale_price'     => $desiredSale, // '' => limpia promo en Woo
+                        'stock_quantity' => $stock,
+                        'categories'     => [['id' => $categoriaId]],
+                        'manage_stock'   => true,
+                        'description'    => $producto['caracteristicas'] ?? '',
+                    ];
+
+                    $resUpdate = Http::retry(3, 2000)
                         ->withBasicAuth($credWoo->user, $credWoo->password)
                         ->timeout(120)
-                        ->post("{$credWoo->base_url}/products/categories", [
-                            'name' => $nameVisible,
-                            'slug' => $slugFinal, // remover si no quieres tocar slug
+                        ->put("{$credWoo->base_url}/products/{$wooProducto['id']}", $payload);
+
+                    if ($resUpdate->successful()) {
+                        $actualizados[] = $sku;
+
+                        $rName   = $this->fieldDiffReport('name', $nameOld, $nombre);
+                        $rCat    = $this->fieldDiffReport('categoria', $catOldName, $nombreCategoriaOriginal);
+                        $rPrecio = [
+                            'campo'   => 'regular_price',
+                            'igual'   => ($oldRegular === $precio),
+                            'old_raw' => $oldRegular,
+                            'new_raw' => $precio,
+                        ];
+                        $rSale = [
+                            'campo'   => 'sale_price',
+                            'igual'   => ($oldSale === $desiredSale),
+                            'old_raw' => $oldSale,
+                            'new_raw' => $desiredSale,
+                        ];
+                        $rStock = [
+                            'campo'   => 'stock',
+                            'igual'   => ($oldStock === $stock),
+                            'old_raw' => $oldStock,
+                            'new_raw' => $stock,
+                        ];
+
+                        SyncHistoryDetail::create([
+                            'sync_history_id' => $sync->id,
+                            'sku'             => $sku,
+                            'tipo'            => 'actualizado',
+                            'datos_anteriores'=> [
+                                'name'      => $nameOld,
+                                'precio'    => $oldRegular,
+                                'sale'      => $oldSale,
+                                'stock'     => $oldStock,
+                                'categoria' => $catOldName,
+                            ],
+                            'datos_nuevos'    => [
+                                'name'      => $nombre,
+                                'precio'    => $precio,
+                                'sale'      => $desiredSale, // puede ser '' si se limpia promo
+                                'stock'     => $stock,
+                                'categoria' => $nombreCategoriaOriginal,
+                            ],
+                            'deltas'          => [
+                                'name'      => $rName,
+                                'categoria' => $rCat,
+                                'regular'   => $rPrecio,
+                                'sale'      => $rSale,
+                                'stock'     => $rStock,
+                            ],
                         ]);
 
-                    if ($resCategoria->successful()) {
-                        $categoriaId = $resCategoria->json('id');
-                        $categoriasMap[$keyDeseado] = $categoriaId;
-                        $slugExistentes[$slugFinal] = $categoriaId;
+                        Log::info("🔍 Diff SKU {$sku}", [
+                            'name_equal'   => $rName['igual'],
+                            'cat_equal'    => $rCat['igual'],
+                            'regular_equal'=> $rPrecio['igual'],
+                            'sale_equal'   => $rSale['igual'],
+                            'stock_equal'  => $rStock['igual'],
+                        ]);
                     } else {
-                        Log::warning("❌ No se pudo crear categoría: $nombreCategoriaOriginal");
-                        $categoriasFallidas[] = $nombreCategoriaOriginal;
-                        $fallidosPorCategoria[] = $sku;
-                        continue;
+                        $this->notificarErrorTelegram($clienteNombre, "Error actualizando SKU $sku: " . $resUpdate->body());
+                        Log::warning("❌ Error actualizando SKU $sku: " . $resUpdate->body());
                     }
+                } else {
+                    $omitidos[] = $sku;
                 }
 
-                // ====== EXISTE EN WOO: comparar usando NORMALIZACIÓN ======
-                if ($wooProducto) {
-                    $nombre = trim($producto['descripcion'] ?? '');
-                    $precio = number_format((float) ($producto['precio'] ?? 0), 2, '.', '');
-                    $stock = (int) ($producto['stock'] ?? 0);
+                continue; // procesado
+            }
 
-                    $nameOld = $wooProducto['name'] ?? '';
-                    $nameNew = $nombre;
+            // ====== NO EXISTE EN WOO: preparar creación ======
+            $nuevo = [
+                'name'           => $nombre,
+                'sku'            => $sku,
+                'regular_price'  => $precio,
+                // solo incluir sale_price si hay promo válida
+                'stock_quantity' => $stock,
+                'manage_stock'   => true,
+                'description'    => $producto['caracteristicas'] ?? '',
+                'categories'     => [['id' => $categoriaId]],
+                'images'         => $this->mapearImagenes($producto),
+            ];
+            if ($promoPrecio !== null) {
+                $nuevo['sale_price'] = $promoPrecio;
+            }
 
-                    $catOldName = $wooProducto['categories'][0]['name'] ?? '';
-                    $catNewName = $nombreCategoriaOriginal;
+            $productosParaCrear[] = $nuevo;
 
-                    $needsUpdate =
-                        ($this->normalizeText($nameOld) !== $this->normalizeText($nameNew)) ||
-                        (($wooProducto['regular_price'] ?? '') !== $precio) ||
-                        ((int) ($wooProducto['stock_quantity'] ?? 0) !== $stock) ||
-                        ($this->categoryKey($catOldName) !== $this->categoryKey($catNewName));
+            $creados[] = $sku;
+            SyncHistoryDetail::create([
+                'sync_history_id' => $sync->id,
+                'sku'             => $sku,
+                'tipo'            => 'creado',
+                'datos_nuevos'    => [
+                    'name'      => $nombre,
+                    'sku'       => $sku,
+                    'precio'    => $precio,
+                    'sale'      => $promoPrecio ?? '',
+                    'stock'     => $stock,
+                    'categoria' => $nombreCategoriaOriginal,
+                ],
+            ]);
+        }
 
-                    if ($needsUpdate) {
-                        $resUpdate = Http::retry(3, 2000)
+        // Lotes de creación
+        $resultados = [];
+        foreach (array_chunk($productosParaCrear, 50) as $lote) {
+            Log::info("⏳ Enviando lote con " . count($lote) . " productos a WooCommerce");
+
+            $res = Http::retry(3, 2000)
+                ->withBasicAuth($credWoo->user, $credWoo->password)
+                ->timeout(120)
+                ->post("{$credWoo->base_url}/products/batch", ['create' => $lote]);
+
+            if ($res->successful()) {
+                $resultados[] = ['status' => '✅ Lote creado', 'response' => $res->json()];
+            } else {
+                $resultados[] = ['status' => '❌ Error al crear lote', 'response' => $res->body()];
+                $this->notificarErrorTelegram($clienteNombre, 'Error creando lote en WooCommerce: ' . $res->body());
+                Log::warning("❌ Error al crear lote: " . $res->body());
+            }
+        }
+
+        // --- Métricas extra para el cruce de SKUs
+        $skusSirett = collect($productosSirett)
+            ->pluck('codigo')
+            ->map(fn($v) => is_string($v) ? trim($v) : (string)$v)
+            ->filter(fn($v) => $v !== '')
+            ->unique()->values();
+
+        $wooConSku = $productosWoo->filter(function ($p) {
+            $s = $p['sku'] ?? '';
+            return is_string($s) && trim($s) !== '';
+        });
+        $wooSinSku = $productosWoo->filter(function ($p) {
+            $s = $p['sku'] ?? '';
+            return !is_string($s) || trim($s) === '';
+        });
+
+        $skusWoo = $wooConSku->pluck('sku')->map(fn($v) => trim($v))->unique()->values();
+        $soloWoo = $skusWoo->diff($skusSirett)->values();
+
+        $soloWooDetalle = $wooConSku
+            ->filter(fn($p) => $soloWoo->contains(trim($p['sku'])))
+            ->map(fn($p) => [
+                'id'     => $p['id'] ?? null,
+                'sku'    => trim($p['sku']),
+                'name'   => $p['name'] ?? null,
+                'status' => $p['status'] ?? null,
+            ])->values();
+
+        $reporte = [
+            'solo_woocommerce' => $soloWoo,
+            'woo_sin_sku' => $wooSinSku->map(fn($p) => [
+                'id'     => $p['id'] ?? null,
+                'name'   => $p['name'] ?? null,
+                'type'   => $p['type'] ?? null,
+                'status' => $p['status'] ?? null,
+            ])->values(),
+        ];
+        file_put_contents(
+            storage_path("logs/solo_woo_{$clienteNombre}.json"),
+            json_encode($reporte, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+        );
+
+        // SKUs con stock = 0 en SiReTT
+        $stockCeroSirett = collect($productosSirett)
+            ->filter(fn($p) => (int)($p['stock'] ?? 0) === 0)
+            ->pluck('codigo')
+            ->filter(fn($v) => is_string($v) && trim($v) !== '')
+            ->map(fn($v) => trim($v))
+            ->unique()->values();
+
+        // Guardar CSV de stock=0
+        $csvLines = "sku\n" . implode("\n", $stockCeroSirett->all());
+        $csvPath = "exports/stock_cero_{$sync->id}.csv";
+        Storage::disk('local')->put($csvPath, $csvLines);
+
+        // --- Gestión productos Woo sin SKU ---
+        $gestionWooSinSku = [
+            'accion'     => $WOO_NO_SKU_ACTION,
+            'procesados' => 0,
+            'moved_ids'  => [],
+            'deleted_ids'=> [],
+            'errores'    => [],
+        ];
+
+        if ($WOO_NO_SKU_ACTION !== 'none' && $wooSinSku->count() > 0) {
+            if ($WOO_NO_SKU_ACTION === 'move') {
+                $catPendId = $this->ensureCategoryExists($credWoo, $WOO_NO_SKU_CATEGORY, $categoriasMap, $slugExistentes);
+                if ($catPendId) {
+                    $updates = $wooSinSku->map(fn($p) => ['id' => $p['id'], 'status' => 'draft', 'categories' => [['id' => $catPendId]]])->values()->all();
+
+                    foreach (array_chunk($updates, 50) as $lote) {
+                        $up = Http::retry(3, 2000)
                             ->withBasicAuth($credWoo->user, $credWoo->password)
                             ->timeout(120)
-                            ->put("{$credWoo->base_url}/products/{$wooProducto['id']}", [
-                                'name' => $nombre,
-                                'regular_price' => $precio,
-                                'stock_quantity' => $stock,
-                                'categories' => [['id' => $categoriaId]],
-                                'manage_stock' => true,
-                                'description' => $producto['caracteristicas'] ?? '',
-                            ]);
+                            ->post("{$credWoo->base_url}/products/batch", ['update' => $lote]);
 
-                        if ($resUpdate->successful()) {
-                            $actualizados[] = $sku;
-
-                            $rName = $this->fieldDiffReport('name', $nameOld, $nameNew);
-                            $rCat = $this->fieldDiffReport('categoria', $catOldName, $catNewName);
-                            $rPrecio = [
-                                'campo' => 'precio',
-                                'igual' => (($wooProducto['regular_price'] ?? '') === $precio),
-                                'old_raw' => $wooProducto['regular_price'] ?? '',
-                                'new_raw' => $precio,
-                            ];
-                            $rStock = [
-                                'campo' => 'stock',
-                                'igual' => ((int) ($wooProducto['stock_quantity'] ?? 0) === $stock),
-                                'old_raw' => (int) ($wooProducto['stock_quantity'] ?? 0),
-                                'new_raw' => $stock,
-                            ];
-
-                            SyncHistoryDetail::create([
-                                'sync_history_id' => $sync->id,
-                                'sku' => $sku,
-                                'tipo' => 'actualizado',
-                                'datos_anteriores' => [
-                                    'name' => $nameOld,
-                                    'precio' => $wooProducto['regular_price'] ?? '',
-                                    'stock' => $wooProducto['stock_quantity'] ?? 0,
-                                    'categoria' => $catOldName,
-                                ],
-                                'datos_nuevos' => [
-                                    'name' => $nameNew,
-                                    'precio' => $precio,
-                                    'stock' => $stock,
-                                    'categoria' => $catNewName,
-                                ],
-                                'deltas' => [
-                                    'name' => $rName,
-                                    'categoria' => $rCat,
-                                    'precio' => $rPrecio,
-                                    'stock' => $rStock,
-                                ],
-                            ]);
-
-                            Log::info("🔍 Diff SKU {$sku}", [
-                                'name_equal' => $rName['igual'],
-                                'name_first_diff' => $rName['first_diff'],
-                                'cat_equal' => $rCat['igual'],
-                                'cat_first_diff' => $rCat['first_diff'],
-                                'precio_equal' => $rPrecio['igual'],
-                                'stock_equal' => $rStock['igual'],
-                            ]);
+                        if ($up->successful()) {
+                            $gestionWooSinSku['procesados'] += count($lote);
+                            $gestionWooSinSku['moved_ids'] = array_merge($gestionWooSinSku['moved_ids'], array_column($lote, 'id'));
                         } else {
-                            $this->notificarErrorTelegram($clienteNombre, "Error actualizando SKU $sku: " . $resUpdate->body());
-                            Log::warning("❌ Error actualizando SKU $sku: " . $resUpdate->body());
+                            $gestionWooSinSku['errores'][] = $up->body();
+                            Log::warning("❌ Error al mover Woo sin SKU: " . $up->body());
                         }
-                    } else {
-                        $omitidos[] = $sku;
                     }
-
-                    continue; // ya procesado este SKU
-                }
-
-                // ====== NO EXISTE EN WOO: preparar creación ======
-                $productosParaCrear[] = [
-                    'name' => $producto['descripcion'] ?? '',
-                    'sku' => $sku,
-                    'regular_price' => number_format((float) ($producto['precio'] ?? 0), 2, '.', ''),
-                    'stock_quantity' => (int) ($producto['stock'] ?? 0),
-                    'manage_stock' => true,
-                    'description' => $producto['caracteristicas'] ?? '',
-                    'categories' => [['id' => $categoriaId]],
-                    'images' => $this->mapearImagenes($producto),
-                ];
-
-                $creados[] = $sku;
-                SyncHistoryDetail::create([
-                    'sync_history_id' => $sync->id,
-                    'sku' => $sku,
-                    'tipo' => 'creado',
-                    'datos_nuevos' => [
-                        'name' => $producto['descripcion'] ?? '',
-                        'sku' => $sku,
-                        'precio' => $producto['precio'] ?? 0,
-                        'stock' => $producto['stock'] ?? 0,
-                        'categoria' => $nombreCategoriaOriginal,
-                    ],
-                ]);
-            }
-
-            // Lotes de creación
-            $resultados = [];
-            foreach (array_chunk($productosParaCrear, 50) as $lote) {
-                Log::info("⏳ Enviando lote con " . count($lote) . " productos a WooCommerce");
-
-                $res = Http::retry(3, 2000)
-                    ->withBasicAuth($credWoo->user, $credWoo->password)
-                    ->timeout(120)
-                    ->post("{$credWoo->base_url}/products/batch", ['create' => $lote]);
-
-                if ($res->successful()) {
-                    $resultados[] = ['status' => '✅ Lote creado', 'response' => $res->json()];
                 } else {
-                    $resultados[] = ['status' => '❌ Error al crear lote', 'response' => $res->body()];
-                    $this->notificarErrorTelegram($clienteNombre, 'Error creando lote en WooCommerce: ' . $res->body());
-                    Log::warning("❌ Error al crear lote: " . $res->body());
+                    $gestionWooSinSku['errores'][] = 'No se pudo crear/obtener categoría especial.';
                 }
             }
 
-            // --- Métricas extra para el cruce de SKUs
-            $skusSirett = collect($productosSirett)
-                ->pluck('codigo')
-                ->map(fn($v) => is_string($v) ? trim($v) : (string) $v)
-                ->filter(fn($v) => $v !== '')
-                ->unique()->values();
-
-            // Woo: separa con y sin SKU
-            $wooConSku = $productosWoo->filter(function ($p) {
-                $s = $p['sku'] ?? '';
-                return is_string($s) && trim($s) !== '';
-            });
-            $wooSinSku = $productosWoo->filter(function ($p) {
-                $s = $p['sku'] ?? '';
-                return !is_string($s) || trim($s) === '';
-            });
-
-            $skusWoo = $wooConSku->pluck('sku')
-                ->map(fn($v) => trim($v))->unique()->values();
-
-            // SKUs que están en Woo pero NO en SiReTT
-            $soloWoo = $skusWoo->diff($skusSirett)->values();
-
-            // Detalle de “solo en Woo”
-            $soloWooDetalle = $wooConSku
-                ->filter(fn($p) => $soloWoo->contains(trim($p['sku'])))
-                ->map(fn($p) => [
-                    'id' => $p['id'] ?? null,
-                    'sku' => trim($p['sku']),
-                    'name' => $p['name'] ?? null,
-                    'status' => $p['status'] ?? null,
-                ])->values();
-
-            // Guarda archivo de apoyo
-            $reporte = [
-                'solo_woocommerce' => $soloWoo,
-                'woo_sin_sku' => $wooSinSku->map(fn($p) => [
-                    'id' => $p['id'] ?? null,
-                    'name' => $p['name'] ?? null,
-                    'type' => $p['type'] ?? null,
-                    'status' => $p['status'] ?? null,
-                ])->values(),
-            ];
-            file_put_contents(
-                storage_path("logs/solo_woo_{$clienteNombre}.json"),
-                json_encode($reporte, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-            );
-
-            // SKUs con stock = 0 en SiReTT
-            $stockCeroSirett = collect($productosSirett)
-                ->filter(fn($p) => (int) ($p['stock'] ?? 0) === 0)
-                ->pluck('codigo')
-                ->filter(fn($v) => is_string($v) && trim($v) !== '')
-                ->map(fn($v) => trim($v))
-                ->unique()->values();
-
-            // Guardar CSV de stock=0 para esta corrida
-            $csvLines = "sku\n" . implode("\n", $stockCeroSirett->all());
-            $csvPath = "exports/stock_cero_{$sync->id}.csv";
-            Storage::disk('local')->put($csvPath, $csvLines);
-
-            // --- Gestionar productos Woo sin SKU ---
-            $gestionWooSinSku = [
-                'accion' => $WOO_NO_SKU_ACTION,
-                'procesados' => 0,
-                'moved_ids' => [],
-                'deleted_ids' => [],
-                'errores' => [],
-            ];
-
-            if ($WOO_NO_SKU_ACTION !== 'none' && $wooSinSku->count() > 0) {
-                if ($WOO_NO_SKU_ACTION === 'move') {
-                    $catPendId = $this->ensureCategoryExists($credWoo, $WOO_NO_SKU_CATEGORY, $categoriasMap, $slugExistentes);
-                    if ($catPendId) {
-                        $updates = $wooSinSku->map(function ($p) use ($catPendId) {
-                            return ['id' => $p['id'], 'status' => 'draft', 'categories' => [['id' => $catPendId]]];
-                        })->values()->all();
-
-                        foreach (array_chunk($updates, 50) as $lote) {
-                            $up = Http::retry(3, 2000)
-                                ->withBasicAuth($credWoo->user, $credWoo->password)
-                                ->timeout(120)
-                                ->post("{$credWoo->base_url}/products/batch", ['update' => $lote]);
-
-                            if ($up->successful()) {
-                                $gestionWooSinSku['procesados'] += count($lote);
-                                $gestionWooSinSku['moved_ids'] = array_merge(
-                                    $gestionWooSinSku['moved_ids'],
-                                    array_column($lote, 'id')
-                                );
-                            } else {
-                                $gestionWooSinSku['errores'][] = $up->body();
-                                Log::warning("❌ Error al mover Woo sin SKU: " . $up->body());
-                            }
-                        }
-                    } else {
-                        $gestionWooSinSku['errores'][] = 'No se pudo crear/obtener categoría especial.';
-                    }
-                }
-
-                if ($WOO_NO_SKU_ACTION === 'delete') {
-                    foreach ($wooSinSku as $p) {
-                        $pid = $p['id'];
-                        $del = Http::retry(2, 1500)
-                            ->withBasicAuth($credWoo->user, $credWoo->password)
-                            ->timeout(60)
-                            ->delete("{$credWoo->base_url}/products/{$pid}", ['force' => true]);
-
-                        if ($del->successful()) {
-                            $gestionWooSinSku['procesados']++;
-                            $gestionWooSinSku['deleted_ids'][] = $pid;
-                        } else {
-                            $gestionWooSinSku['errores'][] = "ID {$pid}: " . $del->body();
-                            Log::warning("❌ Error al eliminar producto #{$pid} sin SKU: " . $del->body());
-                        }
-                    }
-                }
-            }
-
-            // Tiempos
-            $fin = now('America/Managua');
-            $duracion = $inicio->diffInSeconds($fin);
-            Log::info("⏱️ Tiempo total de sincronización para {$clienteNombre}: {$duracion} segundos");
-
-            // Persistir resumen numérico en SyncHistory
-            $sync->update([
-                'finished_at' => $fin,
-                'total_creados' => count($creados),
-                'total_actualizados' => count($actualizados),
-                'total_omitidos' => count($omitidos),
-                'total_fallidos_categoria' => count($fallidosPorCategoria),
-            ]);
-
-            // (AHORA SÍ) Enviar Telegram de último
-            $resumenTelegram = "📦 <b>Sincronización completada</b> para <b>{$clienteNombre}</b>\n"
-                . "🆕 Nuevos: <b>" . count($creados) . "</b>\n"
-                . "🔄 Actualizados: <b>" . count($actualizados) . "</b>\n"
-                . "⏭️ Omitidos: <b>" . count($omitidos) . "</b>\n"
-                . "🛑 Ignorados por categoría: <b>" . count($fallidosPorCategoria) . "</b>\n"
-                . "📤 Lotes enviados: <b>" . count($resultados) . "</b>\n"
-                . "📥 Total productos SiReTT: <b>" . count($productosSirett) . "</b>\n"
-                . "🛒 Total productos Woo: <b>" . $productosWoo->count() . "</b>\n"
-                . "🧩 Solo en Woo (vs SiReTT): <b>" . $soloWoo->count() . "</b>\n"
-                . "🚫 Woo sin SKU: <b>" . $wooSinSku->count() . "</b>";
-
-            if ($WOO_NO_SKU_ACTION === 'move') {
-                $resumenTelegram .= "\n📦 Sin SKU movidos a '{$WOO_NO_SKU_CATEGORY}': <b>" . $gestionWooSinSku['procesados'] . "</b>";
-            }
             if ($WOO_NO_SKU_ACTION === 'delete') {
-                $resumenTelegram .= "\n🗑️ Sin SKU eliminados: <b>" . $gestionWooSinSku['procesados'] . "</b>";
+                foreach ($wooSinSku as $p) {
+                    $pid = $p['id'];
+                    $del = Http::retry(2, 1500)
+                        ->withBasicAuth($credWoo->user, $credWoo->password)
+                        ->timeout(60)
+                        ->delete("{$credWoo->base_url}/products/{$pid}", ['force' => true]);
+
+                    if ($del->successful()) {
+                        $gestionWooSinSku['procesados']++;
+                        $gestionWooSinSku['deleted_ids'][] = $pid;
+                    } else {
+                        $gestionWooSinSku['errores'][] = "ID {$pid}: " . $del->body();
+                        Log::warning("❌ Error al eliminar producto #{$pid} sin SKU: " . $del->body());
+                    }
+                }
             }
-            if (!empty($categoriasFallidas)) {
-                $resumenTelegram .= "\n❌ Categorías no creadas:\n<code>" . implode(', ', array_unique($categoriasFallidas)) . "</code>";
-            }
-            $resumenTelegram .= "\n⏰ Inicio: <b>{$inicio->format('H:i:s')}</b>"
-                . "\n🏁 Fin: <b>{$fin->format('H:i:s')}</b>"
-                . "\n⏱️ Duración: <b>{$duracion}</b> segundos";
-
-            $this->notificarTelegram($clienteNombre, $resumenTelegram);
-
-            // Respuesta JSON
-            return response()->json([
-                'mensaje' => 'Sincronización completa.',
-                'total_sirett' => count($productosSirett),
-                'total_woocommerce' => $productosWoo->count(),
-                'total_creados' => count($creados),
-                'total_actualizados' => count($actualizados),
-                'total_omitidos' => count($omitidos),
-                'total_fallidos_categoria' => count($fallidosPorCategoria),
-                'creados' => $creados,
-                'actualizados' => $actualizados,
-                'omitidos' => $omitidos,
-                'fallidos_categoria' => $fallidosPorCategoria,
-                'lotes_enviados' => count($resultados),
-                'resultado_lotes' => $resultados,
-
-                // Extras de conciliación
-                'total_solo_woocommerce' => $soloWoo->count(),
-                'solo_woocommerce' => $soloWoo,                 // SKUs
-                'solo_woocommerce_detalle' => $soloWooDetalle,          // id, sku, name, status
-                'total_woo_sin_sku' => $wooSinSku->count(),
-                'woo_sin_sku_ids' => $wooSinSku->pluck('id')->values(),
-                'total_stock_cero_sirett' => $stockCeroSirett->count(),
-                'stock_cero_sirett' => $stockCeroSirett,
-
-                // Gestión sin SKU
-                'woo_sin_sku_action' => $WOO_NO_SKU_ACTION,
-                'woo_sin_sku_processed' => $gestionWooSinSku['procesados'],
-                'woo_sin_sku_moved_ids' => $gestionWooSinSku['moved_ids'],
-                'woo_sin_sku_deleted_ids' => $gestionWooSinSku['deleted_ids'],
-                'woo_sin_sku_errors' => $gestionWooSinSku['errores'],
-
-                'categorias_no_creadas' => array_unique($categoriasFallidas),
-            ]);
-
-        } catch (\Throwable $e) {
-            $this->notificarErrorTelegram($clienteNombre, 'Excepción inesperada: ' . $e->getMessage());
-            Log::error("❌ Excepción no controlada: " . $e->getMessage());
-            return response()->json(['error' => 'Excepción no controlada', 'detalle' => $e->getMessage()], 500);
         }
+
+        // Tiempos
+        $fin = now('America/Managua');
+        $duracion = $inicio->diffInSeconds($fin);
+        Log::info("⏱️ Tiempo total de sincronización para {$clienteNombre}: {$duracion} segundos");
+
+        // Persistir resumen numérico
+        $sync->update([
+            'finished_at'             => $fin,
+            'total_creados'           => count($creados),
+            'total_actualizados'      => count($actualizados),
+            'total_omitidos'          => count($omitidos),
+            'total_fallidos_categoria'=> count($fallidosPorCategoria),
+        ]);
+
+        // Telegram resumen
+        $resumenTelegram = "📦 <b>Sincronización completada</b> para <b>{$clienteNombre}</b>\n"
+            . "🆕 Nuevos: <b>" . count($creados) . "</b>\n"
+            . "🔄 Actualizados: <b>" . count($actualizados) . "</b>\n"
+            . "⏭️ Omitidos: <b>" . count($omitidos) . "</b>\n"
+            . "🛑 Ignorados por categoría: <b>" . count($fallidosPorCategoria) . "</b>\n"
+            . "📤 Lotes enviados: <b>" . count($resultados) . "</b>\n"
+            . "📥 Total productos SiReTT: <b>" . count($productosSirett) . "</b>\n"
+            . "🏷️ Con promos detectadas: <b>" . $promoPorSku->count() . "</b>\n"
+            . "🛒 Total productos Woo: <b>" . $productosWoo->count() . "</b>\n"
+            . "🧩 Solo en Woo (vs SiReTT): <b>" . $soloWoo->count() . "</b>\n"
+            . "🚫 Woo sin SKU: <b>" . $wooSinSku->count() . "</b>"
+            . "\n⏰ Inicio: <b>{$inicio->format('H:i:s')}</b>"
+            . "\n🏁 Fin: <b>{$fin->format('H:i:s')}</b>"
+            . "\n⏱️ Duración: <b>{$duracion}</b> segundos";
+        $this->notificarTelegram($clienteNombre, $resumenTelegram);
+
+        // Respuesta JSON
+        return response()->json([
+            'mensaje'                   => 'Sincronización completa.',
+            'total_sirett'              => count($productosSirett),
+            'total_woocommerce'         => $productosWoo->count(),
+            'total_creados'             => count($creados),
+            'total_actualizados'        => count($actualizados),
+            'total_omitidos'            => count($omitidos),
+            'total_fallidos_categoria'  => count($fallidosPorCategoria),
+            'creados'                   => $creados,
+            'actualizados'              => $actualizados,
+            'omitidos'                  => $omitidos,
+            'fallidos_categoria'        => $fallidosPorCategoria,
+            'lotes_enviados'            => count($resultados),
+            'resultado_lotes'           => $resultados,
+
+            // Extras de conciliación
+            'total_solo_woocommerce'    => $soloWoo->count(),
+            'solo_woocommerce'          => $soloWoo,
+            'solo_woocommerce_detalle'  => $soloWooDetalle,
+            'total_woo_sin_sku'         => $wooSinSku->count(),
+            'woo_sin_sku_ids'           => $wooSinSku->pluck('id')->values(),
+            'total_stock_cero_sirett'   => $stockCeroSirett->count(),
+            'stock_cero_sirett'         => $stockCeroSirett,
+
+            // Gestión sin SKU
+            'woo_sin_sku_action'        => $WOO_NO_SKU_ACTION,
+            'woo_sin_sku_processed'     => $gestionWooSinSku['procesados'],
+            'woo_sin_sku_moved_ids'     => $gestionWooSinSku['moved_ids'],
+            'woo_sin_sku_deleted_ids'   => $gestionWooSinSku['deleted_ids'],
+            'woo_sin_sku_errors'        => $gestionWooSinSku['errores'],
+
+            'categorias_no_creadas'     => array_unique($categoriasFallidas),
+        ]);
+
+    } catch (\Throwable $e) {
+        $this->notificarErrorTelegram($clienteNombre, 'Excepción inesperada: ' . $e->getMessage());
+        Log::error("❌ Excepción no controlada: " . $e->getMessage());
+        return response()->json(['error' => 'Excepción no controlada', 'detalle' => $e->getMessage()], 500);
     }
+}
 
 
 
