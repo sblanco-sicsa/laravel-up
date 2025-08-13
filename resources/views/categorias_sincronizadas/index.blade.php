@@ -9,6 +9,7 @@
                 <i class="fa-solid fa-folder-tree me-2"></i>
                 Categorías sincronizadas — <span class="text-primary">{{ $cliente }}</span>
             </h4>
+
             <div class="text-muted small">
                 <span class="me-3">Total: <b>{{ $totales['todas'] }}</b></span>
                 <span class="me-3">Con productos: <b>{{ $totales['con'] }}</b></span>
@@ -59,6 +60,12 @@
         </div>
 
         <div class="d-flex gap-2 mb-2">
+
+            <a href="{{ route('categorias.tree', ['cliente' => $cliente]) }}" class="btn btn-success" rel="noopener">
+                <i class="fa-solid fa-sitemap me-1"></i> Ver árbol de categorías
+            </a>
+
+
             <button id="btnEliminarSeleccion" class="btn btn-outline-danger">
                 <i class="fa-solid fa-trash-can me-1"></i> Eliminar seleccionadas
             </button>
@@ -206,11 +213,11 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         // Rutas & CSRF
-        const RUTA_DELETE_ONE      = "{{ route('catsync.deleteOne', ['cliente' => $cliente, 'wooId' => 999999]) }}".replace('999999', '');
+        const RUTA_DELETE_ONE = "{{ route('catsync.deleteOne', ['cliente' => $cliente, 'wooId' => 999999]) }}".replace('999999', '');
         const RUTA_DELETE_SELECTED = "{{ route('catsync.deleteSelected', ['cliente' => $cliente]) }}";
-        const RUTA_DELETE_ALL      = "{{ route('catsync.deleteAllOrphans', ['cliente' => $cliente]) }}";
-        const RUTA_SYNC_NOW        = "{{ route('catsync.syncNow', ['cliente' => $cliente]) }}";
-        const CSRF                 = "{{ csrf_token() }}";
+        const RUTA_DELETE_ALL = "{{ route('catsync.deleteAllOrphans', ['cliente' => $cliente]) }}";
+        const RUTA_SYNC_NOW = "{{ route('catsync.syncNow', ['cliente' => $cliente]) }}";
+        const CSRF = "{{ csrf_token() }}";
 
         // Helper: determina si una fila puede borrarse (defensa en cliente)
         function filaEliminable($tr) {
@@ -252,7 +259,7 @@
             // Eliminar UNA (con validación extra en cliente)
             $(document).on('click', '.btnDeleteOne', async function () {
                 const $tr = $(this).closest('tr');
-                const id  = $tr.data('woo');
+                const id = $tr.data('woo');
 
                 // Defensa: no permitas si la fila no es eliminable (aunque quiten disabled)
                 if (!filaEliminable($tr)) {
@@ -275,7 +282,7 @@
 
                 const url = RUTA_DELETE_ONE + id;
                 const res = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': CSRF } });
-                const j   = await res.json();
+                const j = await res.json();
 
                 if (j.ok) {
                     await Swal.fire({ icon: 'success', title: 'Eliminada', timer: 1200, showConfirmButton: false });
@@ -317,7 +324,7 @@
                 });
                 const j = await res.json();
                 if (j.ok) {
-                    const okCount  = (j.eliminadas || []).length;
+                    const okCount = (j.eliminadas || []).length;
                     const errCount = (j.errores || []).length;
                     await Swal.fire({ icon: 'success', title: 'Proceso finalizado', html: `Eliminadas: <b>${okCount}</b><br>Errores: <b>${errCount}</b>` });
                     location.reload();
@@ -342,165 +349,6 @@
                     method: 'POST',
                     headers: { 'X-CSRF-TOKEN': CSRF }
                 });
-                const j = await res.json();
-                if (j.ok) {
-                    const okCount  = (j.eliminadas || []).length;
-                    const errCount = (j.errores || []).length;
-                    await Swal.fire({ icon: 'success', title: 'Limpieza completa', html: `Eliminadas: <b>${okCount}</b><br>Errores: <b>${errCount}</b>` });
-                    location.reload();
-                } else {
-                    Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Ocurrió un problema' });
-                }
-            });
-
-            // Sincronizar ahora
-            $('#btnSyncNow').on('click', async function () {
-                const ok = await Swal.fire({
-                    icon: 'question',
-                    title: '¿Sincronizar categorías?',
-                    html: 'Ejecutará la sincronización completa. Puede tardar unos segundos.',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, sincronizar',
-                    cancelButtonText: 'Cancelar'
-                });
-                if (!ok.isConfirmed) return;
-
-                Swal.fire({ title: 'Sincronizando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-                try {
-                    const res = await fetch(RUTA_SYNC_NOW, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
-                    const j   = await res.json();
-
-                    if (!j.ok) {
-                        return Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Error', footer: j.det || '' });
-                    }
-
-                    const a = j.api || {};
-                    await Swal.fire({
-                        icon: 'success',
-                        title: 'Sincronización completada',
-                        html: `
-                          <div class="text-start">
-                            <b>Creadas:</b> ${a.creadas_total ?? 0}<br>
-                            <b>Renombradas:</b> ${a.renombradas_total ?? 0}<br>
-                            <b>Duplicadas eliminadas:</b> ${(a.duplicados?.eliminadas_total) ?? 0}
-                          </div>`
-                    });
-                    location.reload();
-                } catch (e) {
-                    Swal.fire({ icon: 'error', title: 'Fallo de red', text: e.message || 'Error' });
-                }
-            });
-        });
-    </script>
-@endpush
-
-
-
-
-{{-- @push('scripts')
-    <!-- Solo lo que NO está en el layout: SweetAlert2 -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script>
-        // Rutas & CSRF
-        const RUTA_DELETE_ONE = "{{ route('catsync.deleteOne', ['cliente' => $cliente, 'wooId' => 999999]) }}".replace('999999', '');
-        const RUTA_DELETE_SELECTED = "{{ route('catsync.deleteSelected', ['cliente' => $cliente]) }}";
-        const RUTA_DELETE_ALL = "{{ route('catsync.deleteAllOrphans', ['cliente' => $cliente]) }}";
-        const RUTA_SYNC_NOW = "{{ route('catsync.syncNow', ['cliente' => $cliente]) }}";
-        const CSRF = "{{ csrf_token() }}";
-
-        // DataTables v1.x (el layout carga 1.13.6)
-        $(function () {
-            const dt = $('#tabla').DataTable({
-                pageLength: 25,
-                order: [[2, 'asc']],
-                language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }
-            });
-
-            // Check all
-            $('#chkAll').on('change', function () {
-                const checked = this.checked;
-                $('.chkRow').each(function () {
-                    if (!$(this).is(':disabled')) $(this).prop('checked', checked);
-                });
-            });
-
-            // Eliminar una
-            $(document).on('click', '.btnDeleteOne', async function () {
-                const $tr = $(this).closest('tr');
-                const id = $tr.data('woo');
-
-                const ok = await Swal.fire({
-                    icon: 'warning',
-                    title: 'Eliminar categoría',
-                    html: '¿Seguro que deseas eliminar la categoría <b>ID ' + id + '</b>?<br><small>Debe estar sin productos y sin subcategorías.</small>',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar'
-                });
-                if (!ok.isConfirmed) return;
-
-                const url = RUTA_DELETE_ONE + id;
-                const res = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': CSRF } });
-                const j = await res.json();
-                if (j.ok) {
-                    await Swal.fire({ icon: 'success', title: 'Eliminada', timer: 1200, showConfirmButton: false });
-                    location.reload();
-                } else {
-                    Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: j.msg || 'Error', footer: j.det || '' });
-                }
-            });
-
-            // Eliminar seleccionadas
-            $('#btnEliminarSeleccion').on('click', async function () {
-                const ids = [];
-                $('.chkRow:checked').each(function () {
-                    const id = $(this).closest('tr').data('woo');
-                    if (id) ids.push(id);
-                });
-                if (ids.length === 0) {
-                    return Swal.fire({ icon: 'info', title: 'Nada seleccionado', text: 'Marca al menos una categoría sin productos.' });
-                }
-
-                const ok = await Swal.fire({
-                    icon: 'warning',
-                    title: 'Eliminar seleccionadas',
-                    html: 'Se eliminarán <b>' + ids.length + '</b> categorías (deben estar sin productos).',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar'
-                });
-                if (!ok.isConfirmed) return;
-
-                const res = await fetch(RUTA_DELETE_SELECTED, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF },
-                    body: JSON.stringify({ ids })
-                });
-                const j = await res.json();
-                if (j.ok) {
-                    const okCount = (j.eliminadas || []).length;
-                    const errCount = (j.errores || []).length;
-                    await Swal.fire({ icon: 'success', title: 'Proceso finalizado', html: `Eliminadas: <b>${okCount}</b><br>Errores: <b>${errCount}</b>` });
-                    location.reload();
-                } else {
-                    Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Ocurrió un problema' });
-                }
-            });
-
-            // Eliminar TODAS huérfanas (eliminables)
-            $('#btnEliminarTodasHuerfanas').on('click', async function () {
-                const ok = await Swal.fire({
-                    icon: 'warning',
-                    title: 'Eliminar TODAS huérfanas',
-                    html: 'Se eliminarán todas las categorías marcadas como <b>eliminables</b> (sin productos y match exacto).',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, proceder',
-                    cancelButtonText: 'Cancelar'
-                });
-                if (!ok.isConfirmed) return;
-
-                const res = await fetch(RUTA_DELETE_ALL, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
                 const j = await res.json();
                 if (j.ok) {
                     const okCount = (j.eliminadas || []).length;
@@ -539,11 +387,11 @@
                         icon: 'success',
                         title: 'Sincronización completada',
                         html: `
-                          <div class="text-start">
-                            <b>Creadas:</b> ${a.creadas_total ?? 0}<br>
-                            <b>Renombradas:</b> ${a.renombradas_total ?? 0}<br>
-                            <b>Duplicadas eliminadas:</b> ${(a.duplicados?.eliminadas_total) ?? 0}
-                          </div>`
+                              <div class="text-start">
+                                <b>Creadas:</b> ${a.creadas_total ?? 0}<br>
+                                <b>Renombradas:</b> ${a.renombradas_total ?? 0}<br>
+                                <b>Duplicadas eliminadas:</b> ${(a.duplicados?.eliminadas_total) ?? 0}
+                              </div>`
                     });
                     location.reload();
                 } catch (e) {
@@ -552,4 +400,163 @@
             });
         });
     </script>
+@endpush
+
+
+
+
+{{-- @push('scripts')
+<!-- Solo lo que NO está en el layout: SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    // Rutas & CSRF
+    const RUTA_DELETE_ONE = "{{ route('catsync.deleteOne', ['cliente' => $cliente, 'wooId' => 999999]) }}".replace('999999', '');
+    const RUTA_DELETE_SELECTED = "{{ route('catsync.deleteSelected', ['cliente' => $cliente]) }}";
+    const RUTA_DELETE_ALL = "{{ route('catsync.deleteAllOrphans', ['cliente' => $cliente]) }}";
+    const RUTA_SYNC_NOW = "{{ route('catsync.syncNow', ['cliente' => $cliente]) }}";
+    const CSRF = "{{ csrf_token() }}";
+
+    // DataTables v1.x (el layout carga 1.13.6)
+    $(function () {
+        const dt = $('#tabla').DataTable({
+            pageLength: 25,
+            order: [[2, 'asc']],
+            language: { url: 'https://cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' }
+        });
+
+        // Check all
+        $('#chkAll').on('change', function () {
+            const checked = this.checked;
+            $('.chkRow').each(function () {
+                if (!$(this).is(':disabled')) $(this).prop('checked', checked);
+            });
+        });
+
+        // Eliminar una
+        $(document).on('click', '.btnDeleteOne', async function () {
+            const $tr = $(this).closest('tr');
+            const id = $tr.data('woo');
+
+            const ok = await Swal.fire({
+                icon: 'warning',
+                title: 'Eliminar categoría',
+                html: '¿Seguro que deseas eliminar la categoría <b>ID ' + id + '</b>?<br><small>Debe estar sin productos y sin subcategorías.</small>',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            });
+            if (!ok.isConfirmed) return;
+
+            const url = RUTA_DELETE_ONE + id;
+            const res = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': CSRF } });
+            const j = await res.json();
+            if (j.ok) {
+                await Swal.fire({ icon: 'success', title: 'Eliminada', timer: 1200, showConfirmButton: false });
+                location.reload();
+            } else {
+                Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: j.msg || 'Error', footer: j.det || '' });
+            }
+        });
+
+        // Eliminar seleccionadas
+        $('#btnEliminarSeleccion').on('click', async function () {
+            const ids = [];
+            $('.chkRow:checked').each(function () {
+                const id = $(this).closest('tr').data('woo');
+                if (id) ids.push(id);
+            });
+            if (ids.length === 0) {
+                return Swal.fire({ icon: 'info', title: 'Nada seleccionado', text: 'Marca al menos una categoría sin productos.' });
+            }
+
+            const ok = await Swal.fire({
+                icon: 'warning',
+                title: 'Eliminar seleccionadas',
+                html: 'Se eliminarán <b>' + ids.length + '</b> categorías (deben estar sin productos).',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            });
+            if (!ok.isConfirmed) return;
+
+            const res = await fetch(RUTA_DELETE_SELECTED, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF },
+                body: JSON.stringify({ ids })
+            });
+            const j = await res.json();
+            if (j.ok) {
+                const okCount = (j.eliminadas || []).length;
+                const errCount = (j.errores || []).length;
+                await Swal.fire({ icon: 'success', title: 'Proceso finalizado', html: `Eliminadas: <b>${okCount}</b><br>Errores: <b>${errCount}</b>` });
+                location.reload();
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Ocurrió un problema' });
+            }
+        });
+
+        // Eliminar TODAS huérfanas (eliminables)
+        $('#btnEliminarTodasHuerfanas').on('click', async function () {
+            const ok = await Swal.fire({
+                icon: 'warning',
+                title: 'Eliminar TODAS huérfanas',
+                html: 'Se eliminarán todas las categorías marcadas como <b>eliminables</b> (sin productos y match exacto).',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, proceder',
+                cancelButtonText: 'Cancelar'
+            });
+            if (!ok.isConfirmed) return;
+
+            const res = await fetch(RUTA_DELETE_ALL, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
+            const j = await res.json();
+            if (j.ok) {
+                const okCount = (j.eliminadas || []).length;
+                const errCount = (j.errores || []).length;
+                await Swal.fire({ icon: 'success', title: 'Limpieza completa', html: `Eliminadas: <b>${okCount}</b><br>Errores: <b>${errCount}</b>` });
+                location.reload();
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Ocurrió un problema' });
+            }
+        });
+
+        // Sincronizar ahora
+        $('#btnSyncNow').on('click', async function () {
+            const ok = await Swal.fire({
+                icon: 'question',
+                title: '¿Sincronizar categorías?',
+                html: 'Ejecutará la sincronización completa. Puede tardar unos segundos.',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, sincronizar',
+                cancelButtonText: 'Cancelar'
+            });
+            if (!ok.isConfirmed) return;
+
+            Swal.fire({ title: 'Sincronizando…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+            try {
+                const res = await fetch(RUTA_SYNC_NOW, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF } });
+                const j = await res.json();
+
+                if (!j.ok) {
+                    return Swal.fire({ icon: 'error', title: 'Error', text: j.msg || 'Error', footer: j.det || '' });
+                }
+
+                const a = j.api || {};
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'Sincronización completada',
+                    html: `
+                          <div class="text-start">
+                            <b>Creadas:</b> ${a.creadas_total ?? 0}<br>
+                            <b>Renombradas:</b> ${a.renombradas_total ?? 0}<br>
+                            <b>Duplicadas eliminadas:</b> ${(a.duplicados?.eliminadas_total) ?? 0}
+                          </div>`
+                });
+                location.reload();
+            } catch (e) {
+                Swal.fire({ icon: 'error', title: 'Fallo de red', text: e.message || 'Error' });
+            }
+        });
+    });
+</script>
 @endpush --}}

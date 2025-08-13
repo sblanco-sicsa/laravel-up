@@ -17,10 +17,16 @@
       Jerarquía de categorías — <span class="text-uppercase">{{ $cliente }}</span>
     </h5>
     <div class="d-flex gap-2">
-      {{-- usa BASE + route(..., false) para respetar /laravel-up/public --}}
-      <a href="{{ $BASE . route('categorias.index', $cliente, false) }}" class="btn btn-outline-secondary">
+
+                  @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
+
+      <a href="{{ route('catsync.index', ['cliente' => $clienteActual]) }}" class="btn btn-outline-secondary">
       <i class="bi bi-table me-1"></i> Volver a tabla
       </a>
+
+
+
+
       <button id="btnExpand" class="btn btn-outline-primary">
       <i class="bi bi-arrows-expand me-1"></i> Expandir todo
       </button>

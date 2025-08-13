@@ -143,6 +143,14 @@
             </li>
 
             <li class="nav-item">
+                <a href="{{ route('categorias.tree', ['cliente' => $clienteActual]) }}"
+                    class="nav-link {{ request()->routeIs('categorias.tree') ? 'active' : '' }}">
+                    <i class="bi bi-diagram-3-fill me-2"></i> Árbol de categorías
+                </a>
+            </li>
+
+
+            <li class="nav-item">
                 <a href="{{ route('sync-errors.index') }}"
                     class="nav-link {{ request()->routeIs('sync-errors.index') ? 'active' : '' }}">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i> Errores de Sincronización
