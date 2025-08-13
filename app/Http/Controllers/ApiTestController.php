@@ -1986,6 +1986,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
         // === Feature flags por cliente ===
         $usePromos = ClientFeatureFlag::isEnabled($clienteNombre, 'use_promos', true);
         $clearPromosWhenDisabled = ClientFeatureFlag::isEnabled($clienteNombre, 'clear_promos_when_disabled', false);
+        $swapInconsistent = ClientFeatureFlag::isEnabled($clienteNombre, 'swap_prices_when_inconsistent', false);
 
         if (!$credWoo || !$credSirett) {
             $this->notificarErrorTelegram($clienteNombre, 'Credenciales no encontradas para WooCommerce o SiReTT.');
@@ -2039,7 +2040,10 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             storage_path("logs/productos_sirett_{$clienteNombre}.json"),
             json_encode($productosSirett, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
         );
-        Log::info("✅ Total productos SiReTT: " . count($productosSirett) . " | Promos ON: " . ($usePromos ? 'sí' : 'no') . " | ClearIfOff: " . ($clearPromosWhenDisabled ? 'sí' : 'no'));
+        Log::info("✅ Total productos SiReTT: " . count($productosSirett) 
+            . " | Promos ON: " . ($usePromos ? 'sí' : 'no') 
+            . " | ClearIfOff: " . ($clearPromosWhenDisabled ? 'sí' : 'no')
+            . " | SwapInconsistent: " . ($swapInconsistent ? 'sí' : 'no'));
 
         // 2) Woo productos
         $productosWoo = collect();
@@ -2143,14 +2147,16 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             'mayor_regular'     => 0,
             'sin_promo'         => 0,
             'cero_o_negativa'   => 0,
+            'swapped'           => 0,
             'muestras' => [
                 'igual_regular'   => [],
                 'mayor_regular'   => [],
                 'sin_promo'       => [],
                 'cero_o_negativa' => [],
+                'swapped'         => [],
             ],
         ];
-        $diagLines = []; // para CSV: sku, regular_raw, promo_raw, clasificacion
+        $diagLines = []; // CSV: sku, regular_raw, promo_raw, class, swapped, regular_final, sale_final
 
         // --------------- LOOP PRINCIPAL ---------------
         $creados = [];
@@ -2164,57 +2170,91 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             $sku = trim((string)($producto['codigo'] ?? ''));
             if ($sku === '') continue;
 
-            $nombre = trim((string)($producto['descripcion'] ?? ''));
-            $rawRegular = (float)($producto['precio'] ?? 0);
-            $precioRegular = number_format($rawRegular, 2, '.', ''); // Precio normal (catálogo principal)
-            $stock  = (int)($producto['stock'] ?? 0);
+            $nombre     = trim((string)($producto['descripcion'] ?? ''));
+            $rawRegular = (float)($producto['precio'] ?? 0);      // REGULAR desde Sirett normal
+            $stock      = (int)($producto['stock'] ?? 0);
 
-            // Precio rebajado (promo) SOLO si usePromos=ON y es válido (< regular)
+            // Default deseados
+            $desiredRegular = number_format($rawRegular, 2, '.', '');
+            $desiredSale = null;         // null => NO tocar sale; '' => limpiar; 'n.nn' => aplicar
+            $promoClass = 'sin_promo';
+            $swappedNow = false;
+
+            // Promo (rebajado) si usePromos=ON
             $rawPromo = null;
-            $precioPromo = null;
-            $clasif = 'sin_promo';
-
             if ($usePromos) {
                 if (isset($promoPorSku[$sku])) {
                     $rawPromo = (float)($promoPorSku[$sku]['precio'] ?? 0);
+
                     if ($rawPromo > 0 && $rawPromo < $rawRegular) {
-                        $precioPromo = number_format($rawPromo, 2, '.', '');
+                        $desiredSale = number_format($rawPromo, 2, '.', '');
                         $promoStats['aplicada']++;
-                        $clasif = 'aplicada';
+                        $promoClass = 'aplicada';
                     } elseif ($rawPromo <= 0) {
                         $promoStats['cero_o_negativa']++;
-                        $clasif = 'cero_o_negativa';
+                        $promoClass = 'cero_o_negativa';
                         if (count($promoStats['muestras']['cero_o_negativa']) < 15) {
                             $promoStats['muestras']['cero_o_negativa'][] = ['sku'=>$sku,'regular'=>$rawRegular,'promo'=>$rawPromo];
                         }
+                        $desiredSale = ''; // limpiar en Woo
                     } elseif ($rawPromo == $rawRegular) {
                         $promoStats['igual_regular']++;
-                        $clasif = 'igual_regular';
+                        $promoClass = 'igual_regular';
                         if (count($promoStats['muestras']['igual_regular']) < 15) {
                             $promoStats['muestras']['igual_regular'][] = ['sku'=>$sku,'regular'=>$rawRegular,'promo'=>$rawPromo];
                         }
+                        $desiredSale = ''; // limpiar (no hay diferencia)
                     } else { // $rawPromo > $rawRegular
-                        $promoStats['mayor_regular']++;
-                        $clasif = 'mayor_regular';
-                        if (count($promoStats['muestras']['mayor_regular']) < 15) {
-                            $promoStats['muestras']['mayor_regular'][] = ['sku'=>$sku,'regular'=>$rawRegular,'promo'=>$rawPromo];
+                        if ($swapInconsistent) {
+                            // Swap seguro: mayor -> regular, menor -> sale
+                            $hi = max($rawRegular, $rawPromo);
+                            $lo = min($rawRegular, $rawPromo);
+                            if ($hi > 0 && $lo > 0 && $hi != $lo) {
+                                $desiredRegular = number_format($hi, 2, '.', '');
+                                $desiredSale    = number_format($lo, 2, '.', '');
+                                $promoStats['swapped']++;
+                                $promoClass = 'swapped';
+                                $swappedNow = true;
+                                Log::info("↔️ Swap precios SKU {$sku}", [
+                                    'raw_regular' => $rawRegular,
+                                    'raw_promo'   => $rawPromo,
+                                    'final_regular' => $desiredRegular,
+                                    'final_sale'    => $desiredSale,
+                                ]);
+                                // Nota: si swap aplica, ya no sumamos 'mayor_regular'
+                            }
+                        }
+                        if (!$swappedNow) {
+                            $promoStats['mayor_regular']++;
+                            $promoClass = 'mayor_regular';
+                            if (count($promoStats['muestras']['mayor_regular']) < 15) {
+                                $promoStats['muestras']['mayor_regular'][] = ['sku'=>$sku,'regular'=>$rawRegular,'promo'=>$rawPromo];
+                            }
+                            $desiredSale = ''; // limpiar (evitar sale inválido)
                         }
                     }
                 } else {
                     $promoStats['sin_promo']++;
-                    $clasif = 'sin_promo';
+                    $promoClass = 'sin_promo';
                     if (count($promoStats['muestras']['sin_promo']) < 15) {
                         $promoStats['muestras']['sin_promo'][] = ['sku'=>$sku,'regular'=>$rawRegular,'promo'=>null];
                     }
+                    $desiredSale = ''; // limpiar si no hay promo
                 }
+            } elseif ($clearPromosWhenDisabled) {
+                $desiredSale = ''; // limpiar por política OFF
             }
 
-            if ($usePromos) {
+            // Agregar línea diagnóstico (solo si se estaba usando promos o hubo limpieza por OFF)
+            if ($usePromos || $clearPromosWhenDisabled) {
                 $diagLines[] = [
-                    'sku' => $sku,
-                    'regular' => $rawRegular,
-                    'promo'   => $rawPromo ?? 0,
-                    'class'   => $clasif,
+                    'sku'            => $sku,
+                    'regular_raw'    => $rawRegular,
+                    'promo_raw'      => $rawPromo ?? 0,
+                    'class'          => $promoClass,
+                    'swapped'        => $swappedNow ? 1 : 0,
+                    'regular_final'  => (float)$desiredRegular,
+                    'sale_final'     => ($desiredSale === null ? null : ($desiredSale === '' ? 0 : (float)$desiredSale)),
                 ];
             }
 
@@ -2275,28 +2315,14 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
                 $oldStock   = (int)($wooProducto['stock_quantity'] ?? 0);
 
                 // ¿Tocaremos sale_price en esta corrida?
-                $willTouchSale = $usePromos || $clearPromosWhenDisabled;
-
-                // Regular deseado SIEMPRE del catálogo principal
-                $desiredRegular = $precioRegular;
-
-                // Sale deseado según flags:
-                $desiredSale = null;
-                if ($usePromos) {
-                    // ON: si hay promo válida (< regular) => valor; si no => '' para limpiar
-                    $desiredSale = $precioPromo ?? '';
-                } elseif ($clearPromosWhenDisabled) {
-                    // OFF + clear: siempre limpiar
-                    $desiredSale = '';
-                }
-                $saleChanged = $willTouchSale ? ((string)$oldSale !== (string)$desiredSale) : false;
+                $willTouchSale = ($desiredSale !== null);
 
                 $needsUpdate =
                     ($this->normalizeText($nameOld) !== $this->normalizeText($nombre)) ||
                     ($oldRegular !== $desiredRegular) ||
                     ($oldStock !== $stock) ||
                     ($this->categoryKey($catOldName) !== $this->categoryKey($nombreCategoriaOriginal)) ||
-                    $saleChanged;
+                    ($willTouchSale && ((string)$oldSale !== (string)$desiredSale));
 
                 if ($needsUpdate) {
                     $payload = [
@@ -2324,11 +2350,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
                         $rCat    = $this->fieldDiffReport('categoria', $catOldName, $nombreCategoriaOriginal);
                         $rPrecio = ['campo'=>'regular_price','igual'=>($oldRegular===$desiredRegular),'old_raw'=>$oldRegular,'new_raw'=>$desiredRegular];
                         $rStock  = ['campo'=>'stock','igual'=>($oldStock===$stock),'old_raw'=>$oldStock,'new_raw'=>$stock];
-
-                        $rSale = null;
-                        if ($willTouchSale) {
-                            $rSale = ['campo'=>'sale_price','igual'=>($oldSale===$desiredSale),'old_raw'=>$oldSale,'new_raw'=>$desiredSale];
-                        }
+                        $rSale   = $willTouchSale ? ['campo'=>'sale_price','igual'=>($oldSale===$desiredSale),'old_raw'=>$oldSale,'new_raw'=>$desiredSale] : null;
 
                         SyncHistoryDetail::create([
                             'sync_history_id' => $sync->id,
@@ -2344,7 +2366,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
                             'datos_nuevos'    => [
                                 'name'      => $nombre,
                                 'precio'    => $desiredRegular,
-                                'sale'      => $willTouchSale ? $desiredSale : ($wooProducto['sale_price'] ?? ''), // reflejo
+                                'sale'      => $willTouchSale ? $desiredSale : ($wooProducto['sale_price'] ?? ''),
                                 'stock'     => $stock,
                                 'categoria' => $nombreCategoriaOriginal,
                             ],
@@ -2355,11 +2377,6 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
                                 'sale'      => $rSale,
                                 'stock'     => $rStock,
                             ]),
-                        ]);
-
-                        Log::info("🔄 SKU {$sku} actualizado", [
-                            'sale_touched' => $willTouchSale,
-                            'sale_changed' => $saleChanged,
                         ]);
                     } else {
                         $this->notificarErrorTelegram($clienteNombre, "Error actualizando SKU $sku: " . $resUpdate->body());
@@ -2376,16 +2393,15 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             $nuevo = [
                 'name'           => $nombre,
                 'sku'            => $sku,
-                'regular_price'  => $precioRegular, // Precio normal
+                'regular_price'  => $desiredRegular, // Precio normal
                 'stock_quantity' => $stock,
                 'manage_stock'   => true,
                 'description'    => $producto['caracteristicas'] ?? '',
                 'categories'     => [['id' => $categoriaId]],
                 'images'         => $this->mapearImagenes($producto),
             ];
-            // Solo incluir sale_price si flag activo y la promo es válida (< regular)
-            if ($usePromos && $precioPromo !== null) {
-                $nuevo['sale_price'] = $precioPromo; // Precio rebajado
+            if ($desiredSale !== null && $desiredSale !== '') {
+                $nuevo['sale_price'] = $desiredSale; // Precio rebajado
             }
 
             $productosParaCrear[] = $nuevo;
@@ -2398,8 +2414,8 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
                 'datos_nuevos'    => [
                     'name'      => $nombre,
                     'sku'       => $sku,
-                    'precio'    => $precioRegular,
-                    'sale'      => $usePromos ? ($precioPromo ?? '') : '',
+                    'precio'    => $desiredRegular,
+                    'sale'      => $desiredSale ?? '',
                     'stock'     => $stock,
                     'categoria' => $nombreCategoriaOriginal,
                 ],
@@ -2425,13 +2441,18 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             }
         }
 
-        // --- CSV diagnóstico de promos (si usePromos ON)
+        // --- CSV diagnóstico de promos (si usePromos ON u OFF+clear)
         $diagPath = null;
-        if ($usePromos) {
-            $csv = "sku,regular_raw,promo_raw,clasificacion\n";
+        if ($usePromos || $clearPromosWhenDisabled) {
+            $csv = "sku,regular_raw,promo_raw,clasificacion,swapped,regular_final,sale_final\n";
             foreach ($diagLines as $d) {
-                // evitar comas en valores
-                $csv .= "{$d['sku']}," . str_replace(',', '', (string)$d['regular']) . "," . str_replace(',', '', (string)$d['promo']) . ",{$d['class']}\n";
+                $csv .= "{$d['sku']}," 
+                    . str_replace(',', '', (string)$d['regular_raw']) . ","
+                    . str_replace(',', '', (string)$d['promo_raw']) . ","
+                    . "{$d['class']},{$d['swapped']},"
+                    . str_replace(',', '', (string)$d['regular_final']) . ","
+                    . (is_null($d['sale_final']) ? "" : str_replace(',', '', (string)$d['sale_final']))
+                    . "\n";
             }
             $diagPath = "exports/promos_diag_{$sync->id}.csv";
             Storage::disk('local')->put($diagPath, $csv);
@@ -2561,12 +2582,13 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
 
         // Telegram resumen (incluye contadores de promo + path CSV)
         $promoResumen = '';
-        if ($usePromos) {
+        if ($usePromos || $clearPromosWhenDisabled) {
             $promoResumen =
                 "🏷️ Promos:\n" .
                 "   ✅ aplicadas: <b>{$promoStats['aplicada']}</b>\n" .
                 "   ⚖️ igual a regular: <b>{$promoStats['igual_regular']}</b>\n" .
                 "   ⬆️ mayor que regular: <b>{$promoStats['mayor_regular']}</b>\n" .
+                "   ↔️ swapped (corregidas): <b>{$promoStats['swapped']}</b>\n" .
                 "   🚫 sin promo: <b>{$promoStats['sin_promo']}</b>\n" .
                 "   ⛔ promo ≤ 0: <b>{$promoStats['cero_o_negativa']}</b>\n" .
                 (!empty($diagPath) ? "   📄 CSV: <code>storage/app/{$diagPath}</code>\n" : "");
@@ -2580,9 +2602,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             . "📤 Lotes enviados: <b>" . count($resultados) . "</b>\n"
             . "📥 Total productos SiReTT: <b>" . count($productosSirett) . "</b>\n"
             . "🛒 Total productos Woo: <b>" . $productosWoo->count() . "</b>\n"
-            . "🧩 Solo en Woo (vs SiReTT): <b>" . $soloWoo->count() . "</b>\n"
-            . "🚫 Woo sin SKU: <b>" . $wooSinSku->count() . "</b>\n"
-            . "🔧 Flags → use_promos: <b>" . ($usePromos ? 'Sí' : 'No') . "</b> | clear_if_off: <b>" . ($clearPromosWhenDisabled ? 'Sí' : 'No') . "</b>\n"
+            . "🔧 Flags → use_promos: <b>" . ($usePromos ? 'Sí' : 'No') . "</b> | clear_if_off: <b>" . ($clearPromosWhenDisabled ? 'Sí' : 'No') . "</b> | swap_inconsistent: <b>" . ($swapInconsistent ? 'Sí' : 'No') . "</b>\n"
             . $promoResumen
             . "⏰ Inicio: <b>{$inicio->format('H:i:s')}</b>\n"
             . "🏁 Fin: <b>{$fin->format('H:i:s')}</b>\n"
@@ -2624,6 +2644,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
             // Flags
             'use_promos'                   => $usePromos,
             'clear_promos_when_disabled'   => $clearPromosWhenDisabled,
+            'swap_prices_when_inconsistent'=> $swapInconsistent,
 
             // Stats promos + CSV
             'promo_stats'                  => $promoStats,
@@ -2638,6 +2659,7 @@ public function sincronizarProductosConCategorias(string $clienteNombre)
         return response()->json(['error' => 'Excepción no controlada', 'detalle' => $e->getMessage()], 500);
     }
 }
+
 
 
 
