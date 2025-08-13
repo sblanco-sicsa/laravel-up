@@ -18,7 +18,7 @@
     </h5>
     <div class="d-flex gap-2">
 
-                  @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
+      @php $clienteActual = request()->route('cliente') ?? 'familyoutlet'; @endphp
 
       <a href="{{ route('catsync.index', ['cliente' => $clienteActual]) }}" class="btn btn-outline-secondary">
       <i class="bi bi-table me-1"></i> Volver a tabla
@@ -39,7 +39,7 @@
       <button id="btnMakeMaster" class="btn btn-success">
       <i class="bi bi-arrow-bar-up me-1"></i> Hacer master
       </button>
-      <button id="btnApplyWoo" class="btn btn-primary">
+      <button id="btnApplyWoo" type="button" class="btn btn-primary">
       <i class="bi bi-cloud-upload me-1"></i> Aplicar jerarquía en Woo
       </button>
 
@@ -159,24 +159,19 @@
       inst.move_node(node, '#', 'last'); // dispara move_node y guarda
     });
 
-    //const urlApply = `/${cliente}/woocommerce/categories/apply-manual-hierarchy`; 
-    // $('#btnApplyWoo').on('click', () => {
-    //   if (!confirm('Esto creará/actualizará categorías en WooCommerce según tu jerarquía manual. ¿Continuar?')) return;
-    //   $.post(RUTA_APPLY).done(() => {      
-    //   alert('Jerarquía aplicada en WooCommerce');
-    //   }).fail((xhr) => {
-    //   alert(xhr.responseJSON?.error ?? 'No se pudo aplicar la jerarquía en Woo');
-    //   });
-    // });
 
-    const RUTA_APPLY = BASE + @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente], false));
+    const RUTA_APPLY = @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente]));
+    //const RUTA_APPLY = BASE + @json(route('woo.categories.applyHierarchy', ['cliente' => $cliente], false));
     console.log({ RUTA_APPLY }); // para verificar que incluye /laravel-up/public
-    $('#btnApplyWoo').on('click', () => {
-      if (!confirm('Esto creará/actualizará categorías en WooCommerce según tu jerarquía manual. ¿Continuar?')) return;
+
+    $('#btnApplyWoo').on('click', (e) => {
+      e.preventDefault();               // <- evita submit/navegación
+      if (!confirm('...')) return;
       $.post(RUTA_APPLY)
-      .done((resp) => alert(resp?.msg ?? 'Jerarquía aplicada en WooCommerce'))
-      .fail((xhr) => alert(xhr.responseJSON?.error ?? xhr.responseJSON?.message ?? 'No se pudo aplicar la jerarquía en Woo'));
+      .done(resp => alert(resp?.msg ?? 'Jerarquía aplicada en WooCommerce'))
+      .fail(xhr => alert(xhr.responseJSON?.error ?? xhr.responseJSON?.message ?? 'No se pudo aplicar la jerarquía en Woo'));
     });
+
 
 
     });

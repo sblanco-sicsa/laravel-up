@@ -65,15 +65,7 @@ Route::prefix('{cliente}/categorias')->group(function () {
 
 
 
-
-
-Route::prefix('{cliente}/woocommerce')->group(function () {
-    // Aplicar la jerarquía manual a WooCommerce (crear/actualizar categorías)
-    Route::post('/categories/apply-manual-hierarchy', [CategoriaSincronizadaController::class, 'applyManualHierarchyToWoo'])
-        ->name('woo.categories.applyHierarchy');
-
-    // (Opcional) Reasignar categorías de productos en Woo según tu mapeo manual
-    Route::post('/products/apply-manual-categories', [CategoriaSincronizadaController::class, 'applyManualCategoriesToProducts'])
-        ->name('woo.products.applyManualCategories');
-});
-
+Route::post(
+    '{cliente}/woocommerce/categories/apply-manual-hierarchy',
+    [CategoriaSincronizadaController::class, 'applyManualHierarchyToWoo']
+)->name('woo.categories.applyHierarchy');
